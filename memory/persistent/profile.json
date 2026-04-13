@@ -1,0 +1,17 @@
+{
+  "profile_id": "default-grounded",
+  "preferred_tone": "grounded",
+  "preferred_answer_structure": [
+    "fact",
+    "synthesis",
+    "interpretation",
+    "recommendation"
+  ],
+  "abstraction_level": "balanced",
+  "actionability_preference": "medium",
+  "citation_preference": "high",
+  "favored_output_forms": [
+    "markdown"
+  ],
+  "reuse_preference": "proposal-first"
+}

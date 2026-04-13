@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+*.egg-info/
+.DS_Store
+wiki/index.md
+wiki/log.md
+raw/.brain/source_records.jsonl
+raw/.brain/ingest_errors.jsonl
+memory/session/answer_records.jsonl
+memory/session/answers/
+memory/session/writeback/
