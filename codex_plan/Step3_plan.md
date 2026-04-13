@@ -1,0 +1,124 @@
+# Step3 资产沉淀化实施计划
+
+## 摘要
+- Step3 的核心目标定为“把系统从问答引擎升级为稳定的资产生产系统”，重点不在答案更长，而在 writeback、ontology、skills、eval 这四条沉淀链路变得可追溯、可复用、可评估。
+- 保持现有 `ingest`、`build-wiki`、`ask`、`lint`、`writeback` 可用，并新增两个可选 CLI 入口：`build-assets` 和 `eval`。
+- 所有新资产都必须以 `wiki/` 为中间层：ontology candidate 和 skill candidate 只能来自 wiki、session record、writeback bundle，不能 raw-only 直升。
+
+## 公共接口与数据契约
+- CLI 调整为：
+  - `python -m apps.cli.main build-assets`
+  - `python -m apps.cli.main eval`
+  - 现有 `ask` / `writeback` 命令名和基本语义不变。
+- `build-assets` 负责扫描 `wiki/`、`memory/session/`、`memory/session/writeback/`，刷新 `ontology/candidates/` 和 `skills/candidates/`。
+- `eval` 负责读取 `eval/cases/` 的黄金案例，评估当前仓库状态，并输出 `eval/reports/<run_id>.json` 与 `.md`。
+- 模型层新增并统一使用：
+  - `WritebackTargetDecision`
+  - `WritebackBundle`
+  - `MethodProfile`
+  - `MethodSuggestion`
+  - `TemplatePlan`
+  - `OntologyCandidate`
+  - `SkillCandidateManifest`
+  - `EvaluationCase`
+  - `EvaluationReport`
+- `AskResult`、`AnswerRecord`、`SessionRecord` 扩展字段：
+  - `method_profile_id`
+  - `template_id`
+  - `writeback_plan`
+  - `asset_value_signals`
+- `writeback_targets` 保留为兼容字段，但作为 `writeback_plan` 的派生摘要，不再是唯一依据。
+- 路径层新增：
+  - `ontology/candidates/`
+  - `skills/candidates/`
+  - `eval/cases/`
+  - `eval/reports/`
+  - 同时为 `ontology/candidates/` 与 `skills/candidates/` 生成 `index.json` 方便人工检查。
+
+## 关键实现
+- Writeback 升级为结构化路由链：`target_selector -> router -> quality_gate -> merger -> service`。
+- `ask` 只负责计算并写入 writeback preview，不直接改写 wiki、ontology、skills。
+- `writeback <query_id>` 生成 `memory/session/writeback/<query_id>.json`，每个 target 都必须包含 `target`、`action`、`rationale`、`confidence`、`long_term_value`、`evidence_refs`、`content_preview`、`approval_status`。
+- `writeback --apply` 只允许执行通过门禁的目标：默认要求 `confidence >= 0.7`，且证据足够 grounded；不通过的 target 仍保留在 bundle 中并写明拒绝原因。
+- Wiki merge 采用“受管块”策略，不覆盖人工正文：已有 page 只更新 frontmatter 的 `source_refs`、`links_to`、`updated_at`，并把新增内容写入 `## Managed Writeback Updates` 下按 `query_id` 分段的块中。
+- Topic target 只允许更新已在证据页中出现的现有 topic page；decision/principle 可在缺失时新建；ontology/skill 只能生成 candidate，不允许直接升格为正式资产。
+- 每个自动生成或自动 merge 的资产都必须带 `TODO(HUMAN_APPROVAL_WORKFLOW)` 元数据，预留未来的人审流。
+- Style/profile 升级为 method profile：新增 `method_profile.py`、`method_reflector.py`、`template_selector.py`，并保留 `style_engine.py` 作为最终渲染器。
+- `memory/persistent/profile.json` 继续是唯一 profile 源，但语义变为“结构与方法偏好”，字段至少包含：
+  - answer structure
+  - abstraction depth
+  - operationalization level
+  - explanation pattern (`decision-first|concept-first|hybrid`)
+  - reusable asset preferences (`mapping|object_model|roadmap|schema|table`)
+  - citation preference
+  - assetization preference
+- Loader 必须兼容 Step2 旧 profile 文件，自动补默认值，不要求手工迁移。
+- 回答流程升级为：`classification -> evidence -> answer plan -> template selection -> render`；method profile 可以重排 section，并额外插入一个方法型 section，如 `Mapping` 或 `Roadmap`，但必须保留 `Fact / Synthesis / Interpretation / Recommendation` 四个核心段。
+- `method_reflector` 只生成建议并写回 session record，不自动修改 persistent profile。
+- Ontology 仅实现 candidate 链，不做完整知识图谱：新增 `candidate_extractor`、`canonicalizer`、`evidence_linker`、`promotion_policy`。
+- Candidate 来源固定为：
+  - `topics` -> `Topic`
+  - `principles` -> `Principle`
+  - `projects` -> `Project`
+  - `decisions` -> `Decision`
+  - 跨页重复稳定命名概念 -> `Concept`
+  - 被派生页引用的 source page -> `Evidence`
+- `Concept` candidate 至少要求 2 个非 source wiki page 支撑且必须带 `source_refs`；其他 candidate 至少要求 1 个非 source wiki page 和可追溯 source refs。
+- 输出格式固定为 `ontology/candidates/<type>/<candidate_id>.json`，并通过确定性的 `candidate_id` 做幂等 merge，避免重复文件。
+- Step3 不把 candidate 升到 `ontology/objects/`；正式 promotion 继续留到后续批次。
+- Skill candidate generation 新增 `candidate_generator`、`skill_packager`、`promotion_policy`。
+- 生成源固定为“重复出现且高价值的 answer/work pattern”，数据来自 session records 和 writeback bundles，不从原始 prompt 直接生成。
+- Candidate folder 固定输出到 `skills/candidates/<skill_id>/`，且必须包含：
+  - `SKILL.md`
+  - `input_schema.json`
+  - `output_schema.json`
+  - `examples/example_01.md`
+  - `metadata.json`
+- Step3 首批固定支持的 skill candidate 家族：
+  - `topic_synthesis`
+  - `decision_extraction`
+  - `principle_distillation`
+  - `project_context_refresh`
+  - `concept_comparison_table`
+- Skill candidate 生成门槛定为：至少 2 条相关 session record，且平均 asset-value 分数 `>= 0.65`；metadata 中必须写明 `origin_query_ids`、`origin_wiki_pages`、`source_refs`。
+- 正式 `skills/*` 不自动写入，Step3 只产出候选。
+- Evaluation harness 新增：
+  - `asset_value`
+  - `writeback_precision`
+  - `memory_precision`
+  - `method_consistency`
+  - `ontology_quality`
+  - `skill_candidate_quality`
+- `eval` 只读当前仓库资产并生成报告，不批准、不过写 wiki，不晋升 ontology/skills。
+- Report 必须人类可读：每个 case 都要展示分数、证据、命中的 target、未命中的原因，以及“值不值得沉淀”的解释。
+- 提交的 sample outputs 以当前真实 corpus 为主，至少覆盖：
+  - `品牌经营OS`
+  - `商品全生命周期运营原则`
+  - `儿童学习桌垫单因子测图`
+  - 以及它们关联的 source pages
+
+## 测试计划
+- 单元测试覆盖：
+  - writeback route / gate / merge 行为
+  - method profile 兼容加载与 template selection
+  - ontology canonicalization / evidence linking / promotion policy
+  - skill candidate packaging 与 promotion policy
+  - eval 各维度评分逻辑
+- 集成测试覆盖：
+  - `ask -> writeback -> writeback --apply -> build-assets -> eval` 全链路
+  - `ask` 本身不会直接改写 `wiki/`、`ontology/`、`skills/`
+  - `writeback --apply` 会 merge 已有 wiki 页面而不是覆盖正文
+  - `build-assets` 会幂等刷新 candidate，不制造重复
+- Golden 测试覆盖两类问题：
+  - 高价值问题应命中正确 writeback target，并生成可追溯 candidate
+  - 低价值问题应被 quality gate 拦下或仅保留 proposal
+- 回归检查三条硬规则：
+  - ontology candidate 必须同时有 `wiki_refs` 和 `source_refs`
+  - skill candidate 必须有 origin sessions 与 example
+  - writeback merge 不得覆盖既有 wiki 主体文本
+
+## 假设与默认
+- Step3 默认保留当前四段回答合同，只允许 method profile 在此基础上重排或插入一个方法型 section，不切换成完全自由格式。
+- 新增 CLI 只增加 `build-assets` 和 `eval`，不再扩张更多命令面。
+- `memory/persistent/profile.json` 继续复用，不新开第二份 profile 文件。
+- Sample ontology/skill candidates 会提交进仓库作为 inspectable 样例，但全部保持 `candidate/pending approval` 状态。
