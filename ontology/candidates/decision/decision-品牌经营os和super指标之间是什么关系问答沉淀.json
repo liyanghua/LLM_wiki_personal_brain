@@ -1,0 +1,19 @@
+{
+  "candidate_id": "decision-品牌经营os和super指标之间是什么关系问答沉淀",
+  "candidate_type": "Decision",
+  "canonical_name": "品牌经营OS和SUPER指标之间是什么关系？ 问答沉淀",
+  "summary": "综合 品牌经营OS、货品全生命周期管理-SUPER指标模型、商品全生命周期运营原则 的信息，可以看到这些页面共同指向同一条知识链路，而不是孤立结论。 这也延续了近期会话里重复出现的关注主题。",
+  "wiki_refs": [
+    "wiki/decisions/品牌经营os和super指标之间是什么关系-qa-note.md"
+  ],
+  "source_refs": [
+    "raw/conversations/背景选择_访谈日志.md",
+    "raw/industry_docs/淘天商品全生命周期智能运营AI体.md",
+    "raw/industry_docs/电商运营本体核心文档.md",
+    "raw/industry_docs/货品全生命周期管理-SUPER指标模型.md"
+  ],
+  "attributes": {
+    "page_type": "decision"
+  },
+  "status": "candidate/pending-approval"
+}

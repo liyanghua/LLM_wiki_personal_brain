@@ -1,0 +1,18 @@
+{
+  "candidate_id": "evidence-淘天商品全生命周期智能运营ai体",
+  "candidate_type": "Evidence",
+  "canonical_name": "淘天商品全生命周期智能运营AI体",
+  "summary": "Evidence source referenced by 3 wiki pages.",
+  "wiki_refs": [
+    "wiki/decisions/品牌经营os和super指标之间是什么关系-qa-note.md",
+    "wiki/principles/商品全生命周期运营原则.md",
+    "wiki/topics/品牌经营os.md"
+  ],
+  "source_refs": [
+    "raw/industry_docs/淘天商品全生命周期智能运营AI体.md"
+  ],
+  "attributes": {
+    "source_path": "raw/industry_docs/淘天商品全生命周期智能运营AI体.md"
+  },
+  "status": "candidate/pending-approval"
+}

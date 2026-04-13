@@ -1,4 +1,5 @@
 {
+  "method_profile_id": "default-grounded",
   "profile_id": "default-grounded",
   "preferred_tone": "grounded",
   "preferred_answer_structure": [
@@ -7,11 +8,20 @@
     "interpretation",
     "recommendation"
   ],
+  "abstraction_depth": "balanced",
   "abstraction_level": "balanced",
+  "operationalization_level": "medium",
   "actionability_preference": "medium",
+  "explanation_pattern": "hybrid",
+  "reusable_asset_preferences": [
+    "mapping",
+    "roadmap",
+    "schema"
+  ],
   "citation_preference": "high",
   "favored_output_forms": [
     "markdown"
   ],
+  "assetization_preference": "proposal-first",
   "reuse_preference": "proposal-first"
 }

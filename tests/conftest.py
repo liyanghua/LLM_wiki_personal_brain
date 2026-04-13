@@ -71,11 +71,15 @@ def create_workspace(root: Path) -> None:
         "ontology/profiles",
         "ontology/schemas",
         "ontology/evidence_index",
+        "ontology/candidates",
         "memory/session",
         "memory/session/summaries",
         "memory/persistent",
         "memory/skills",
         "memory/summaries",
+        "skills/candidates",
+        "eval/cases",
+        "eval/reports",
     ]:
         (root / relative).mkdir(parents=True, exist_ok=True)
 
@@ -146,6 +150,20 @@ def brain_workspace(tmp_path: Path) -> Path:
             json.dumps(payload, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+    (tmp_path / "eval" / "cases" / "step3_asset_value.json").write_text(
+        json.dumps(
+            {
+                "case_id": "step3-asset-value",
+                "question": "品牌经营OS和SUPER指标之间是什么关系？",
+                "expected_writeback_targets": ["wiki/decisions/", "wiki/topics/"],
+                "expected_candidate_types": ["Topic", "Concept", "Evidence"],
+                "expected_skill_families": ["topic_synthesis"],
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
 
     return tmp_path
 

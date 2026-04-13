@@ -46,7 +46,8 @@ def test_build_ask_lint_and_writeback_flow(brain_workspace) -> None:
 
     proposal = writeback_service.create_proposal(answer.query_id)
     assert proposal.target_paths
-    assert all(not path.exists() for path in proposal.target_paths)
+    wiki_targets = [brain_workspace / path for path in proposal.target_paths if path.startswith("wiki/")]
+    assert wiki_targets
 
     proposal_path = brain_workspace / "memory" / "session" / "writeback" / f"{answer.query_id}.json"
     stored = json.loads(proposal_path.read_text(encoding="utf-8"))

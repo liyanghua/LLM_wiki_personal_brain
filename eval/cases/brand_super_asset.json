@@ -1,0 +1,16 @@
+{
+  "case_id": "brand-super-asset",
+  "question": "品牌经营OS和SUPER指标之间是什么关系？",
+  "expected_writeback_targets": [
+    "wiki/decisions/",
+    "wiki/topics/"
+  ],
+  "expected_candidate_types": [
+    "Topic",
+    "Concept",
+    "Evidence"
+  ],
+  "expected_skill_families": [
+    "topic_synthesis"
+  ]
+}

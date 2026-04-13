@@ -1,0 +1,19 @@
+{
+  "candidate_id": "principle-商品全生命周期运营原则",
+  "candidate_type": "Principle",
+  "canonical_name": "商品全生命周期运营原则",
+  "summary": "用生命周期视角统筹新品、成熟品和尾货，并以 SUPER 等指标持续诊断货品经营健康度。",
+  "wiki_refs": [
+    "wiki/principles/商品全生命周期运营原则.md"
+  ],
+  "source_refs": [
+    "raw/industry_docs/淘天商品全生命周期智能运营AI体.md",
+    "raw/industry_docs/货品全生命周期管理-SUPER指标模型.md",
+    "raw/conversations/背景选择_访谈日志.md",
+    "raw/industry_docs/电商运营本体核心文档.md"
+  ],
+  "attributes": {
+    "page_type": "principle"
+  },
+  "status": "candidate/pending-approval"
+}

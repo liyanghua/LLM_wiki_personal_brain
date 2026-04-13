@@ -1,1 +1,3 @@
-"""Evaluation placeholders for future offline evolution."""
+from personal_brain.eval.runner import EvaluationRunner
+
+__all__ = ["EvaluationRunner"]

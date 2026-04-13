@@ -1,0 +1,18 @@
+{
+  "candidate_id": "evidence-货品全生命周期管理-super指标模型",
+  "candidate_type": "Evidence",
+  "canonical_name": "货品全生命周期管理-SUPER指标模型",
+  "summary": "Evidence source referenced by 3 wiki pages.",
+  "wiki_refs": [
+    "wiki/decisions/品牌经营os和super指标之间是什么关系-qa-note.md",
+    "wiki/principles/商品全生命周期运营原则.md",
+    "wiki/topics/品牌经营os.md"
+  ],
+  "source_refs": [
+    "raw/industry_docs/货品全生命周期管理-SUPER指标模型.md"
+  ],
+  "attributes": {
+    "source_path": "raw/industry_docs/货品全生命周期管理-SUPER指标模型.md"
+  },
+  "status": "candidate/pending-approval"
+}

@@ -1,0 +1,18 @@
+{
+  "candidate_id": "concept-单因子测图",
+  "candidate_type": "Concept",
+  "canonical_name": "单因子测图",
+  "summary": "Cross-page concept candidate derived from 2 wiki pages.",
+  "wiki_refs": [
+    "wiki/decisions/儿童学习桌垫单因子测图项目当前重点是什么-qa-note.md",
+    "wiki/projects/儿童学习桌垫单因子测图.md"
+  ],
+  "source_refs": [
+    "raw/industry_docs/桌垫类目-儿童学习桌垫单因子测图示例.md",
+    "raw/conversations/背景选择_访谈日志.md"
+  ],
+  "attributes": {
+    "supporting_pages": 2
+  },
+  "status": "candidate/pending-approval"
+}

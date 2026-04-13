@@ -1,0 +1,20 @@
+{
+  "candidate_id": "evidence-背景选择访谈日志",
+  "candidate_type": "Evidence",
+  "canonical_name": "背景选择 访谈日志",
+  "summary": "Evidence source referenced by 5 wiki pages.",
+  "wiki_refs": [
+    "wiki/decisions/儿童学习桌垫单因子测图项目当前重点是什么-qa-note.md",
+    "wiki/decisions/品牌经营os和super指标之间是什么关系-qa-note.md",
+    "wiki/principles/商品全生命周期运营原则.md",
+    "wiki/projects/儿童学习桌垫单因子测图.md",
+    "wiki/topics/品牌经营os.md"
+  ],
+  "source_refs": [
+    "raw/conversations/背景选择_访谈日志.md"
+  ],
+  "attributes": {
+    "source_path": "raw/conversations/背景选择_访谈日志.md"
+  },
+  "status": "candidate/pending-approval"
+}

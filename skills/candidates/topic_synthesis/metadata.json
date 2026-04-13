@@ -1,0 +1,28 @@
+{
+  "skill_id": "topic_synthesis",
+  "family": "topic_synthesis",
+  "title": "Topic Synthesis Candidate",
+  "summary": "Candidate skill package derived from 3 high-value session records.",
+  "origin_query_ids": [
+    "20260413-075031",
+    "20260413-131158-308082",
+    "20260413-131158-308215"
+  ],
+  "origin_wiki_pages": [
+    "wiki/topics/品牌经营os.md",
+    "wiki/sources/货品全生命周期管理-super指标模型.md",
+    "wiki/principles/商品全生命周期运营原则.md",
+    "wiki/projects/儿童学习桌垫单因子测图.md",
+    "wiki/sources/6大维度42个细分变量选择逻辑01.md",
+    "wiki/sources/6大维度42个细分变量选择逻辑02.md"
+  ],
+  "source_refs": [
+    "raw/conversations/背景选择_访谈日志.md",
+    "raw/industry_docs/淘天商品全生命周期智能运营AI体.md",
+    "raw/industry_docs/电商运营本体核心文档.md",
+    "raw/industry_docs/货品全生命周期管理-SUPER指标模型.md",
+    "raw/industry_docs/6大维度·42个细分变量选择逻辑02.md"
+  ],
+  "asset_value_score": 0.6666666666666666,
+  "status": "candidate/pending-approval"
+}

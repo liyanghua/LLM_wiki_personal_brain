@@ -1,0 +1,21 @@
+{
+  "candidate_id": "concept-品牌经营os",
+  "candidate_type": "Concept",
+  "canonical_name": "品牌经营OS",
+  "summary": "Cross-page concept candidate derived from 3 wiki pages.",
+  "wiki_refs": [
+    "wiki/decisions/品牌经营os和super指标之间是什么关系-qa-note.md",
+    "wiki/principles/商品全生命周期运营原则.md",
+    "wiki/topics/品牌经营os.md"
+  ],
+  "source_refs": [
+    "raw/conversations/背景选择_访谈日志.md",
+    "raw/industry_docs/淘天商品全生命周期智能运营AI体.md",
+    "raw/industry_docs/电商运营本体核心文档.md",
+    "raw/industry_docs/货品全生命周期管理-SUPER指标模型.md"
+  ],
+  "attributes": {
+    "supporting_pages": 3
+  },
+  "status": "candidate/pending-approval"
+}

@@ -1,0 +1,19 @@
+{
+  "candidate_id": "topic-品牌经营os",
+  "candidate_type": "Topic",
+  "canonical_name": "品牌经营OS",
+  "summary": "围绕人货场协同、生命周期运营和数据驱动的品牌经营方法框架。",
+  "wiki_refs": [
+    "wiki/topics/品牌经营os.md"
+  ],
+  "source_refs": [
+    "raw/conversations/背景选择_访谈日志.md",
+    "raw/industry_docs/淘天商品全生命周期智能运营AI体.md",
+    "raw/industry_docs/电商运营本体核心文档.md",
+    "raw/industry_docs/货品全生命周期管理-SUPER指标模型.md"
+  ],
+  "attributes": {
+    "page_type": "topic"
+  },
+  "status": "candidate/pending-approval"
+}

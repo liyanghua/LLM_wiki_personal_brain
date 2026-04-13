@@ -1,0 +1,31 @@
+{
+  "skill_id": "decision_extraction",
+  "family": "decision_extraction",
+  "title": "Decision Extraction Candidate",
+  "summary": "Candidate skill package derived from 4 high-value session records.",
+  "origin_query_ids": [
+    "20260413-075031",
+    "20260413-131158-308082",
+    "20260413-131203-621330",
+    "20260413-131203-621545"
+  ],
+  "origin_wiki_pages": [
+    "wiki/topics/品牌经营os.md",
+    "wiki/sources/货品全生命周期管理-super指标模型.md",
+    "wiki/principles/商品全生命周期运营原则.md",
+    "wiki/projects/儿童学习桌垫单因子测图.md",
+    "wiki/sources/6大维度42个细分变量选择逻辑01.md",
+    "wiki/sources/桌垫类目-儿童学习桌垫单因子测图示例.md",
+    "wiki/sources/背景选择-访谈日志.md",
+    "wiki/sources/单因子筛选补充文档.md"
+  ],
+  "source_refs": [
+    "raw/conversations/背景选择_访谈日志.md",
+    "raw/industry_docs/淘天商品全生命周期智能运营AI体.md",
+    "raw/industry_docs/电商运营本体核心文档.md",
+    "raw/industry_docs/货品全生命周期管理-SUPER指标模型.md",
+    "raw/industry_docs/桌垫类目-儿童学习桌垫单因子测图示例.md"
+  ],
+  "asset_value_score": 0.705,
+  "status": "candidate/pending-approval"
+}

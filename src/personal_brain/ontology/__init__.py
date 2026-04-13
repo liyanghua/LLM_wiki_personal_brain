@@ -1,1 +1,3 @@
-"""Ontology skeletons for Batch 1."""
+from personal_brain.ontology.candidate_extractor import CandidateExtractor
+
+__all__ = ["CandidateExtractor"]

@@ -1,0 +1,14 @@
+{
+  "case_id": "project-refresh-asset",
+  "question": "儿童学习桌垫单因子测图项目当前重点是什么？",
+  "expected_writeback_targets": [
+    "wiki/decisions/"
+  ],
+  "expected_candidate_types": [
+    "Project",
+    "Evidence"
+  ],
+  "expected_skill_families": [
+    "project_context_refresh"
+  ]
+}

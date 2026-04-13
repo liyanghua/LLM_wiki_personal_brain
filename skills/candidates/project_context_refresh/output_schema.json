@@ -1,0 +1,23 @@
+{
+  "type": "object",
+  "properties": {
+    "fact": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "synthesis": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "recommendation": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

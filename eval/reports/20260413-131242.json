@@ -1,0 +1,51 @@
+{
+  "run_id": "20260413-131242",
+  "created_at": "2026-04-13T13:12:42Z",
+  "metrics": {
+    "answer_asset_value": 0.955,
+    "writeback_precision": 1.0,
+    "memory_precision": 1.0,
+    "method_consistency": 1.0,
+    "ontology_quality": 1.0,
+    "skill_candidate_quality": 1.0
+  },
+  "case_results": [
+    {
+      "case_id": "brand-super-asset",
+      "question": "品牌经营OS和SUPER指标之间是什么关系？",
+      "scores": {
+        "answer_asset_value": 1.0,
+        "writeback_precision": 1.0,
+        "memory_precision": 1.0,
+        "method_consistency": 1.0,
+        "ontology_quality": 1.0,
+        "skill_candidate_quality": 1.0
+      },
+      "matched_targets": [
+        "wiki/decisions/",
+        "wiki/topics/"
+      ],
+      "missing_targets": [],
+      "explanation": "值得沉淀；Asset value derived from stored session asset signals.；Writeback precision compares expected target prefixes with routed targets.；Persistent memory remained proposal-first and within conservative policy.；Answer preserved the core four-part structure with stored method/template identifiers.；Ontology quality checks candidate type coverage plus wiki/source traceability.；Skill candidate quality checks family coverage plus origin traceability."
+    },
+    {
+      "case_id": "project-refresh-asset",
+      "question": "儿童学习桌垫单因子测图项目当前重点是什么？",
+      "scores": {
+        "answer_asset_value": 0.9099999999999999,
+        "writeback_precision": 1.0,
+        "memory_precision": 1.0,
+        "method_consistency": 1.0,
+        "ontology_quality": 1.0,
+        "skill_candidate_quality": 1.0
+      },
+      "matched_targets": [
+        "wiki/decisions/"
+      ],
+      "missing_targets": [],
+      "explanation": "值得沉淀；Asset value derived from stored session asset signals.；Writeback precision compares expected target prefixes with routed targets.；Persistent memory remained proposal-first and within conservative policy.；Answer preserved the core four-part structure with stored method/template identifiers.；Ontology quality checks candidate type coverage plus wiki/source traceability.；Skill candidate quality checks family coverage plus origin traceability."
+    }
+  ],
+  "report_path_json": "eval/reports/20260413-131242.json",
+  "report_path_markdown": "eval/reports/20260413-131242.md"
+}

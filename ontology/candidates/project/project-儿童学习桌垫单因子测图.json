@@ -1,0 +1,17 @@
+{
+  "candidate_id": "project-儿童学习桌垫单因子测图",
+  "candidate_type": "Project",
+  "canonical_name": "儿童学习桌垫单因子测图",
+  "summary": "围绕桌垫类目主图变量拆解的测试项目，重点关注视角、构图和背景。",
+  "wiki_refs": [
+    "wiki/projects/儿童学习桌垫单因子测图.md"
+  ],
+  "source_refs": [
+    "raw/conversations/背景选择_访谈日志.md",
+    "raw/industry_docs/桌垫类目-儿童学习桌垫单因子测图示例.md"
+  ],
+  "attributes": {
+    "page_type": "project"
+  },
+  "status": "candidate/pending-approval"
+}

@@ -6,7 +6,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from personal_brain.models import PersonalStyleProfile
+from personal_brain.models import MethodProfile, PersonalStyleProfile
 
 
 DEFAULT_PILOT_TITLES = [
@@ -95,6 +95,22 @@ class BrainPaths(BaseModel):
     def persistent_open_loops(self) -> Path:
         return self.memory / "persistent" / "open_loops.json"
 
+    @property
+    def ontology_candidates(self) -> Path:
+        return self.ontology / "candidates"
+
+    @property
+    def skills_candidates(self) -> Path:
+        return self.root / "skills" / "candidates"
+
+    @property
+    def eval_cases(self) -> Path:
+        return self.root / "eval" / "cases"
+
+    @property
+    def eval_reports(self) -> Path:
+        return self.root / "eval" / "reports"
+
     def session_day_dir(self, day: str) -> Path:
         return self.memory / "session" / day
 
@@ -120,6 +136,7 @@ class BrainPaths(BaseModel):
             self.ontology / "profiles",
             self.ontology / "schemas",
             self.ontology / "evidence_index",
+            self.ontology_candidates,
             self.memory / "session",
             self.session_summaries_dir,
             self.memory / "persistent",
@@ -127,6 +144,9 @@ class BrainPaths(BaseModel):
             self.memory / "summaries",
             self.answers_dir,
             self.writeback_dir,
+            self.skills_candidates,
+            self.eval_cases,
+            self.eval_reports,
         ]:
             path.mkdir(parents=True, exist_ok=True)
 
@@ -152,6 +172,9 @@ class BrainConfig(BaseModel):
 
     def default_style_profile(self) -> PersonalStyleProfile:
         return PersonalStyleProfile()
+
+    def default_method_profile(self) -> MethodProfile:
+        return MethodProfile()
 
     @classmethod
     def from_env(cls) -> "BrainConfig":

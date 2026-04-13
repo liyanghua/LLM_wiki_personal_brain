@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from personal_brain.models import AnswerPlan, EvidenceItem, MemoryRecallBundle
+from personal_brain.models import AnswerPlan, EvidenceItem, MemoryRecallBundle, TemplatePlan
 from personal_brain.retrieval.provider import AnswerRewriteProvider
 
 
@@ -11,6 +11,7 @@ class AnswerComposer:
         evidence: list[EvidenceItem],
         recalled_memory: MemoryRecallBundle,
         provider: AnswerRewriteProvider | None = None,
+        template: TemplatePlan | None = None,
     ) -> tuple[dict[str, list[str]], str]:
         sections = {
             "fact": self._compose_fact(evidence),
@@ -18,6 +19,8 @@ class AnswerComposer:
             "interpretation": self._compose_interpretation(plan.question_type, evidence),
             "recommendation": self._compose_recommendation(plan, evidence),
         }
+        if template is not None and template.method_section is not None:
+            sections[template.method_section] = self._compose_method_section(template.method_section, evidence, sections)
         if provider is not None:
             sections = provider.rewrite_sections(plan.question, plan.question_type, sections, evidence)
         answer_summary = "；".join(sections["synthesis"][:1] or sections["fact"][:1]) or "No answer summary available."
@@ -67,3 +70,24 @@ class AnswerComposer:
         if plan.open_follow_ups:
             recommendations.append(f"下一步可继续追问：{plan.open_follow_ups[0]}")
         return recommendations
+
+    def _compose_method_section(
+        self,
+        section_name: str,
+        evidence: list[EvidenceItem],
+        sections: dict[str, list[str]],
+    ) -> list[str]:
+        titles = [item.page_title for item in evidence[:3]]
+        if section_name == "mapping":
+            if len(titles) >= 2:
+                return [f"{titles[0]} -> {titles[1]} -> 可复用沉淀路径"]
+            return ["当前证据不足以形成稳定映射，但可先保留问题与页面之间的对应关系。"]
+        if section_name == "roadmap":
+            return ["先确认现有证据，再补关键缺口，最后判断是否适合沉淀为长期资产。"]
+        if section_name == "schema":
+            return ["核心结构：定义对象 -> 证据页 -> 适用范围 -> 可沉淀资产。"]
+        if section_name == "table":
+            return ["可进一步把相关页面整理成对比表，用于后续复用。"]
+        if section_name == "object_model":
+            return ["建议把当前回答抽象成对象、关系和证据三层结构。"]
+        return sections["synthesis"][:1]

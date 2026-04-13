@@ -1,0 +1,289 @@
+[
+  {
+    "candidate_id": "decision-儿童学习桌垫单因子测图项目当前重点是什么问答沉淀",
+    "candidate_type": "Decision",
+    "canonical_name": "儿童学习桌垫单因子测图项目当前重点是什么？ 问答沉淀",
+    "summary": "综合 桌垫类目-儿童学习桌垫单因子测图示例、儿童学习桌垫单因子测图、背景选择\\_访谈日志 的信息，可以看到这些页面共同指向同一条知识链路，而不是孤立结论。 这也延续了近期会话里重复出现的关注主题。",
+    "wiki_refs": [
+      "wiki/decisions/儿童学习桌垫单因子测图项目当前重点是什么-qa-note.md"
+    ],
+    "source_refs": [
+      "raw/industry_docs/桌垫类目-儿童学习桌垫单因子测图示例.md",
+      "raw/conversations/背景选择_访谈日志.md"
+    ],
+    "attributes": {
+      "page_type": "decision"
+    },
+    "status": "candidate/pending-approval"
+  },
+  {
+    "candidate_id": "decision-品牌经营os和super指标之间是什么关系问答沉淀",
+    "candidate_type": "Decision",
+    "canonical_name": "品牌经营OS和SUPER指标之间是什么关系？ 问答沉淀",
+    "summary": "综合 品牌经营OS、货品全生命周期管理-SUPER指标模型、商品全生命周期运营原则 的信息，可以看到这些页面共同指向同一条知识链路，而不是孤立结论。 这也延续了近期会话里重复出现的关注主题。",
+    "wiki_refs": [
+      "wiki/decisions/品牌经营os和super指标之间是什么关系-qa-note.md"
+    ],
+    "source_refs": [
+      "raw/conversations/背景选择_访谈日志.md",
+      "raw/industry_docs/淘天商品全生命周期智能运营AI体.md",
+      "raw/industry_docs/电商运营本体核心文档.md",
+      "raw/industry_docs/货品全生命周期管理-SUPER指标模型.md"
+    ],
+    "attributes": {
+      "page_type": "decision"
+    },
+    "status": "candidate/pending-approval"
+  },
+  {
+    "candidate_id": "principle-商品全生命周期运营原则",
+    "candidate_type": "Principle",
+    "canonical_name": "商品全生命周期运营原则",
+    "summary": "用生命周期视角统筹新品、成熟品和尾货，并以 SUPER 等指标持续诊断货品经营健康度。",
+    "wiki_refs": [
+      "wiki/principles/商品全生命周期运营原则.md"
+    ],
+    "source_refs": [
+      "raw/industry_docs/淘天商品全生命周期智能运营AI体.md",
+      "raw/industry_docs/货品全生命周期管理-SUPER指标模型.md",
+      "raw/conversations/背景选择_访谈日志.md",
+      "raw/industry_docs/电商运营本体核心文档.md"
+    ],
+    "attributes": {
+      "page_type": "principle"
+    },
+    "status": "candidate/pending-approval"
+  },
+  {
+    "candidate_id": "project-儿童学习桌垫单因子测图",
+    "candidate_type": "Project",
+    "canonical_name": "儿童学习桌垫单因子测图",
+    "summary": "围绕桌垫类目主图变量拆解的测试项目，重点关注视角、构图和背景。",
+    "wiki_refs": [
+      "wiki/projects/儿童学习桌垫单因子测图.md"
+    ],
+    "source_refs": [
+      "raw/conversations/背景选择_访谈日志.md",
+      "raw/industry_docs/桌垫类目-儿童学习桌垫单因子测图示例.md"
+    ],
+    "attributes": {
+      "page_type": "project"
+    },
+    "status": "candidate/pending-approval"
+  },
+  {
+    "candidate_id": "topic-品牌经营os",
+    "candidate_type": "Topic",
+    "canonical_name": "品牌经营OS",
+    "summary": "围绕人货场协同、生命周期运营和数据驱动的品牌经营方法框架。",
+    "wiki_refs": [
+      "wiki/topics/品牌经营os.md"
+    ],
+    "source_refs": [
+      "raw/conversations/背景选择_访谈日志.md",
+      "raw/industry_docs/淘天商品全生命周期智能运营AI体.md",
+      "raw/industry_docs/电商运营本体核心文档.md",
+      "raw/industry_docs/货品全生命周期管理-SUPER指标模型.md"
+    ],
+    "attributes": {
+      "page_type": "topic"
+    },
+    "status": "candidate/pending-approval"
+  },
+  {
+    "candidate_id": "concept-单因子测图",
+    "candidate_type": "Concept",
+    "canonical_name": "单因子测图",
+    "summary": "Cross-page concept candidate derived from 2 wiki pages.",
+    "wiki_refs": [
+      "wiki/decisions/儿童学习桌垫单因子测图项目当前重点是什么-qa-note.md",
+      "wiki/projects/儿童学习桌垫单因子测图.md"
+    ],
+    "source_refs": [
+      "raw/industry_docs/桌垫类目-儿童学习桌垫单因子测图示例.md",
+      "raw/conversations/背景选择_访谈日志.md"
+    ],
+    "attributes": {
+      "supporting_pages": 2
+    },
+    "status": "candidate/pending-approval"
+  },
+  {
+    "candidate_id": "concept-背景选择",
+    "candidate_type": "Concept",
+    "canonical_name": "背景选择",
+    "summary": "Cross-page concept candidate derived from 5 wiki pages.",
+    "wiki_refs": [
+      "wiki/decisions/儿童学习桌垫单因子测图项目当前重点是什么-qa-note.md",
+      "wiki/decisions/品牌经营os和super指标之间是什么关系-qa-note.md",
+      "wiki/principles/商品全生命周期运营原则.md",
+      "wiki/projects/儿童学习桌垫单因子测图.md",
+      "wiki/topics/品牌经营os.md"
+    ],
+    "source_refs": [
+      "raw/industry_docs/桌垫类目-儿童学习桌垫单因子测图示例.md",
+      "raw/conversations/背景选择_访谈日志.md",
+      "raw/industry_docs/淘天商品全生命周期智能运营AI体.md",
+      "raw/industry_docs/电商运营本体核心文档.md",
+      "raw/industry_docs/货品全生命周期管理-SUPER指标模型.md"
+    ],
+    "attributes": {
+      "supporting_pages": 5
+    },
+    "status": "candidate/pending-approval"
+  },
+  {
+    "candidate_id": "concept-品牌经营os",
+    "candidate_type": "Concept",
+    "canonical_name": "品牌经营OS",
+    "summary": "Cross-page concept candidate derived from 3 wiki pages.",
+    "wiki_refs": [
+      "wiki/decisions/品牌经营os和super指标之间是什么关系-qa-note.md",
+      "wiki/principles/商品全生命周期运营原则.md",
+      "wiki/topics/品牌经营os.md"
+    ],
+    "source_refs": [
+      "raw/conversations/背景选择_访谈日志.md",
+      "raw/industry_docs/淘天商品全生命周期智能运营AI体.md",
+      "raw/industry_docs/电商运营本体核心文档.md",
+      "raw/industry_docs/货品全生命周期管理-SUPER指标模型.md"
+    ],
+    "attributes": {
+      "supporting_pages": 3
+    },
+    "status": "candidate/pending-approval"
+  },
+  {
+    "candidate_id": "concept-super指标",
+    "candidate_type": "Concept",
+    "canonical_name": "SUPER指标",
+    "summary": "Cross-page concept candidate derived from 3 wiki pages.",
+    "wiki_refs": [
+      "wiki/decisions/品牌经营os和super指标之间是什么关系-qa-note.md",
+      "wiki/principles/商品全生命周期运营原则.md",
+      "wiki/topics/品牌经营os.md"
+    ],
+    "source_refs": [
+      "raw/conversations/背景选择_访谈日志.md",
+      "raw/industry_docs/淘天商品全生命周期智能运营AI体.md",
+      "raw/industry_docs/电商运营本体核心文档.md",
+      "raw/industry_docs/货品全生命周期管理-SUPER指标模型.md"
+    ],
+    "attributes": {
+      "supporting_pages": 3
+    },
+    "status": "candidate/pending-approval"
+  },
+  {
+    "candidate_id": "concept-全生命周期运营",
+    "candidate_type": "Concept",
+    "canonical_name": "全生命周期运营",
+    "summary": "Cross-page concept candidate derived from 3 wiki pages.",
+    "wiki_refs": [
+      "wiki/decisions/品牌经营os和super指标之间是什么关系-qa-note.md",
+      "wiki/principles/商品全生命周期运营原则.md",
+      "wiki/topics/品牌经营os.md"
+    ],
+    "source_refs": [
+      "raw/conversations/背景选择_访谈日志.md",
+      "raw/industry_docs/淘天商品全生命周期智能运营AI体.md",
+      "raw/industry_docs/电商运营本体核心文档.md",
+      "raw/industry_docs/货品全生命周期管理-SUPER指标模型.md"
+    ],
+    "attributes": {
+      "supporting_pages": 3
+    },
+    "status": "candidate/pending-approval"
+  },
+  {
+    "candidate_id": "evidence-桌垫类目-儿童学习桌垫单因子测图示例",
+    "candidate_type": "Evidence",
+    "canonical_name": "桌垫类目-儿童学习桌垫单因子测图示例",
+    "summary": "Evidence source referenced by 2 wiki pages.",
+    "wiki_refs": [
+      "wiki/decisions/儿童学习桌垫单因子测图项目当前重点是什么-qa-note.md",
+      "wiki/projects/儿童学习桌垫单因子测图.md"
+    ],
+    "source_refs": [
+      "raw/industry_docs/桌垫类目-儿童学习桌垫单因子测图示例.md"
+    ],
+    "attributes": {
+      "source_path": "raw/industry_docs/桌垫类目-儿童学习桌垫单因子测图示例.md"
+    },
+    "status": "candidate/pending-approval"
+  },
+  {
+    "candidate_id": "evidence-背景选择访谈日志",
+    "candidate_type": "Evidence",
+    "canonical_name": "背景选择 访谈日志",
+    "summary": "Evidence source referenced by 5 wiki pages.",
+    "wiki_refs": [
+      "wiki/decisions/儿童学习桌垫单因子测图项目当前重点是什么-qa-note.md",
+      "wiki/decisions/品牌经营os和super指标之间是什么关系-qa-note.md",
+      "wiki/principles/商品全生命周期运营原则.md",
+      "wiki/projects/儿童学习桌垫单因子测图.md",
+      "wiki/topics/品牌经营os.md"
+    ],
+    "source_refs": [
+      "raw/conversations/背景选择_访谈日志.md"
+    ],
+    "attributes": {
+      "source_path": "raw/conversations/背景选择_访谈日志.md"
+    },
+    "status": "candidate/pending-approval"
+  },
+  {
+    "candidate_id": "evidence-淘天商品全生命周期智能运营ai体",
+    "candidate_type": "Evidence",
+    "canonical_name": "淘天商品全生命周期智能运营AI体",
+    "summary": "Evidence source referenced by 3 wiki pages.",
+    "wiki_refs": [
+      "wiki/decisions/品牌经营os和super指标之间是什么关系-qa-note.md",
+      "wiki/principles/商品全生命周期运营原则.md",
+      "wiki/topics/品牌经营os.md"
+    ],
+    "source_refs": [
+      "raw/industry_docs/淘天商品全生命周期智能运营AI体.md"
+    ],
+    "attributes": {
+      "source_path": "raw/industry_docs/淘天商品全生命周期智能运营AI体.md"
+    },
+    "status": "candidate/pending-approval"
+  },
+  {
+    "candidate_id": "evidence-电商运营本体核心文档",
+    "candidate_type": "Evidence",
+    "canonical_name": "电商运营本体核心文档",
+    "summary": "Evidence source referenced by 3 wiki pages.",
+    "wiki_refs": [
+      "wiki/decisions/品牌经营os和super指标之间是什么关系-qa-note.md",
+      "wiki/principles/商品全生命周期运营原则.md",
+      "wiki/topics/品牌经营os.md"
+    ],
+    "source_refs": [
+      "raw/industry_docs/电商运营本体核心文档.md"
+    ],
+    "attributes": {
+      "source_path": "raw/industry_docs/电商运营本体核心文档.md"
+    },
+    "status": "candidate/pending-approval"
+  },
+  {
+    "candidate_id": "evidence-货品全生命周期管理-super指标模型",
+    "candidate_type": "Evidence",
+    "canonical_name": "货品全生命周期管理-SUPER指标模型",
+    "summary": "Evidence source referenced by 3 wiki pages.",
+    "wiki_refs": [
+      "wiki/decisions/品牌经营os和super指标之间是什么关系-qa-note.md",
+      "wiki/principles/商品全生命周期运营原则.md",
+      "wiki/topics/品牌经营os.md"
+    ],
+    "source_refs": [
+      "raw/industry_docs/货品全生命周期管理-SUPER指标模型.md"
+    ],
+    "attributes": {
+      "source_path": "raw/industry_docs/货品全生命周期管理-SUPER指标模型.md"
+    },
+    "status": "candidate/pending-approval"
+  }
+]

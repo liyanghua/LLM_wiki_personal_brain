@@ -4,7 +4,9 @@ import argparse
 import json
 from pathlib import Path
 
+from personal_brain.assets.service import AssetBuildService
 from personal_brain.config import BrainConfig
+from personal_brain.eval.runner import EvaluationRunner
 from personal_brain.ingestion.service import IngestionService
 from personal_brain.lint.service import WikiLintService
 from personal_brain.retrieval.query_engine import QueryEngine
@@ -21,11 +23,13 @@ def build_parser() -> argparse.ArgumentParser:
     ingest.add_argument("--bucket", default=None)
 
     subparsers.add_parser("build-wiki", help="Compile wiki pages from ingested sources.")
+    subparsers.add_parser("build-assets", help="Build ontology and skill candidate assets.")
 
     ask = subparsers.add_parser("ask", help="Answer a question from the wiki.")
     ask.add_argument("question")
 
     subparsers.add_parser("lint", help="Run wiki lint checks.")
+    subparsers.add_parser("eval", help="Evaluate current personal-brain asset quality.")
 
     writeback = subparsers.add_parser("writeback", help="Create or apply a writeback proposal.")
     writeback.add_argument("query_id")
@@ -59,9 +63,19 @@ def main() -> None:
         print(result.answer_markdown, end="")
         return
 
+    if args.command == "build-assets":
+        result = AssetBuildService(config).build()
+        print(json.dumps(result.model_dump(mode="json"), ensure_ascii=False))
+        return
+
     if args.command == "lint":
         result = WikiLintService(config).run()
         print(json.dumps(result.model_dump(mode="json"), ensure_ascii=False))
+        return
+
+    if args.command == "eval":
+        report = EvaluationRunner(config).run()
+        print(json.dumps(report.model_dump(mode="json"), ensure_ascii=False))
         return
 
     if args.command == "writeback":

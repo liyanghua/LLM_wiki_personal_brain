@@ -1,0 +1,17 @@
+{
+  "candidate_id": "evidence-桌垫类目-儿童学习桌垫单因子测图示例",
+  "candidate_type": "Evidence",
+  "canonical_name": "桌垫类目-儿童学习桌垫单因子测图示例",
+  "summary": "Evidence source referenced by 2 wiki pages.",
+  "wiki_refs": [
+    "wiki/decisions/儿童学习桌垫单因子测图项目当前重点是什么-qa-note.md",
+    "wiki/projects/儿童学习桌垫单因子测图.md"
+  ],
+  "source_refs": [
+    "raw/industry_docs/桌垫类目-儿童学习桌垫单因子测图示例.md"
+  ],
+  "attributes": {
+    "source_path": "raw/industry_docs/桌垫类目-儿童学习桌垫单因子测图示例.md"
+  },
+  "status": "candidate/pending-approval"
+}

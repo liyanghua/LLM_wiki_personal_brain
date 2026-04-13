@@ -846,3 +846,155 @@ more complexity
 → more automation
 → more memory writes
 → more personality
+
+## 19. Step 3 Addendum: Durable Asset Production
+
+Step 3 extends the system from a grounded answer engine into a durable asset production pipeline.
+
+The core goal is not longer answers.
+The core goal is more stable write-back, ontology candidate formation, skill candidate generation, and evaluation of whether a result deserves to be kept.
+
+All agents working on Step 3 must preserve the existing layer boundaries while following the rules below.
+
+---
+
+### 19.1 Writeback Router and Merge Rules
+
+Writeback must now behave like a routed pipeline, not a single yes/no proposal.
+
+Required internal stages:
+
+1. target selection
+2. quality gate
+3. merge or create logic
+4. proposal persistence
+
+Every writeback target should include:
+
+- target path
+- action
+- rationale
+- confidence
+- expected long-term value
+- evidence refs
+- content preview
+- approval status
+
+Rules:
+
+- not every good answer should be written back
+- existing wiki pages must be updated through merge logic
+- existing human-written wiki text should not be naively overwritten
+- managed writeback content should live in explicit managed sections
+- future human approval boundaries should be marked with clear TODO markers
+
+Forbidden behavior:
+
+- overwriting a wiki page body wholesale because a new answer looks better
+- writing ontology objects or skills directly from writeback apply
+- treating every high-scoring answer as durable by default
+
+---
+
+### 19.2 Method Profile Rules
+
+Step 3 upgrades style/profile into a method profile.
+
+Method profile should focus on:
+
+- answer structure
+- abstraction depth
+- operationalization level
+- explanation pattern
+- preference for mappings, object models, roadmaps, schemas, or tables
+- preference for turning answers into reusable assets
+
+Rules:
+
+- method profile should influence structure more than tone
+- the core answer contract of fact / synthesis / interpretation / recommendation must remain intact
+- method sections may be added, but should remain grounded in selected evidence
+- method profile updates must be conservative and reviewable
+
+Forbidden behavior:
+
+- treating tone mimicry as the main goal
+- allowing method preferences to remove evidence or weaken grounding
+- silently rewriting persistent profile state without review
+
+---
+
+### 19.3 Ontology Candidate Rules
+
+Ontology work in Step 3 is candidate-oriented, not full knowledge-graph construction.
+
+Allowed candidate types:
+
+- Topic
+- Concept
+- Project
+- Decision
+- Principle
+- Evidence
+
+Rules:
+
+- ontology candidates must come from wiki-backed content, not raw-only extraction
+- every ontology candidate must include both wiki refs and source refs
+- concept candidates should only appear when cross-page support is present
+- ontology candidates should remain inspectable as local files
+- candidate generation should be deterministic enough to avoid duplicate sprawl
+
+Forbidden behavior:
+
+- promoting raw material directly into ontology
+- creating candidates with no wiki linkage
+- using vague brainstorm fragments as ontology objects
+
+---
+
+### 19.4 Skill Candidate Rules
+
+Step 3 should turn repeated high-value work patterns into candidate skills.
+
+Rules:
+
+- skill candidates must come from repeated successful sessions, not one-off prompts
+- candidate skills should live under `skills/candidates/`
+- every candidate skill must include `SKILL.md`, input schema, output schema, example, and metadata
+- every skill candidate must record origin query ids, origin wiki pages, and source refs
+- official `skills/` should not be auto-written by this batch
+
+Forbidden behavior:
+
+- auto-promoting a candidate skill into a production skill
+- packaging a skill candidate from a single weak answer
+- generating skill candidates with no traceable source pages
+
+---
+
+### 19.5 Evaluation Rules
+
+Step 3 evaluation should answer whether an output deserves durable retention.
+
+Evaluation should cover:
+
+- answer asset value
+- writeback precision
+- memory precision
+- method consistency
+- ontology candidate quality
+- skill candidate usefulness
+
+Rules:
+
+- evaluation reports should be human-readable
+- evaluation should be driven by explicit cases, not hidden heuristics only
+- reports should explain both what matched and what did not
+- evaluation should not mutate durable assets by itself
+
+Forbidden behavior:
+
+- calling the system “good” because code ran without checking asset value
+- measuring only fluency or answer length
+- hiding missing writeback targets or weak candidate quality

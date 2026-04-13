@@ -1,0 +1,17 @@
+{
+  "candidate_id": "decision-儿童学习桌垫单因子测图项目当前重点是什么问答沉淀",
+  "candidate_type": "Decision",
+  "canonical_name": "儿童学习桌垫单因子测图项目当前重点是什么？ 问答沉淀",
+  "summary": "综合 桌垫类目-儿童学习桌垫单因子测图示例、儿童学习桌垫单因子测图、背景选择\\_访谈日志 的信息，可以看到这些页面共同指向同一条知识链路，而不是孤立结论。 这也延续了近期会话里重复出现的关注主题。",
+  "wiki_refs": [
+    "wiki/decisions/儿童学习桌垫单因子测图项目当前重点是什么-qa-note.md"
+  ],
+  "source_refs": [
+    "raw/industry_docs/桌垫类目-儿童学习桌垫单因子测图示例.md",
+    "raw/conversations/背景选择_访谈日志.md"
+  ],
+  "attributes": {
+    "page_type": "decision"
+  },
+  "status": "candidate/pending-approval"
+}
