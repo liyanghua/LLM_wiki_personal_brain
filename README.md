@@ -2,6 +2,27 @@
 
 Local-first Personal Brain OS with a durable wiki middle layer and a Step3 asset-production pipeline.
 
+## Step4 Brain Workbench
+
+This repo now also includes a dedicated frontend workbench in `brain-workbench/`.
+
+```bash
+cd brain-workbench
+npm install
+npm run dev
+```
+
+The frontend is a thin Vue workbench over the Personal Brain OS backend, with pages for:
+
+- ask workspace
+- writeback review
+- asset candidates
+- profile workspace
+- eval reports
+- wiki explorer
+
+Frontend API binding uses the Python `apps/api/server.py` layer and falls back to local mock payloads when an endpoint is unavailable.
+
 ## Layer Model
 
 The repository keeps four strict layers:

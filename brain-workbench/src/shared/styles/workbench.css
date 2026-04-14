@@ -1,0 +1,269 @@
+#app {
+  min-height: 100vh;
+}
+
+.app-shell {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  min-height: 100vh;
+}
+
+.app-shell__nav {
+  border-right: 1px solid var(--wb-border);
+  background: rgba(10, 14, 18, 0.8);
+  padding: 24px 18px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+}
+
+.app-shell__brand {
+  margin-bottom: 22px;
+}
+
+.app-shell__brand h1 {
+  margin: 0 0 8px;
+  font-size: 1.3rem;
+}
+
+.app-shell__brand p,
+.app-shell__nav small {
+  color: var(--wb-text-muted);
+}
+
+.app-shell__main {
+  padding: 24px;
+}
+
+.nav-list {
+  display: grid;
+  gap: 10px;
+}
+
+.nav-link {
+  border: 1px solid transparent;
+  border-radius: 14px;
+  padding: 12px 14px;
+  display: block;
+  background: rgba(24, 32, 41, 0.6);
+}
+
+.nav-link.router-link-active {
+  border-color: var(--wb-accent);
+  background: rgba(57, 183, 199, 0.12);
+}
+
+.page-shell {
+  display: grid;
+  gap: var(--wb-gap);
+}
+
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.page-header h1,
+.split-pane__header h3,
+.panel-card h3,
+.widget-card h3 {
+  margin: 0;
+}
+
+.page-header__description,
+.split-pane__header p,
+.widget-card p,
+.eyebrow {
+  margin: 6px 0 0;
+  color: var(--wb-text-muted);
+}
+
+.eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 0.72rem;
+}
+
+.workbench-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.9fr) minmax(0, 1.6fr) minmax(280px, 1fr);
+  gap: var(--wb-gap);
+}
+
+.workbench-grid--wide {
+  grid-template-columns: minmax(260px, 0.9fr) minmax(0, 1.4fr) minmax(300px, 1fr);
+}
+
+.page-card,
+.panel-card,
+.widget-card,
+.split-pane,
+.detail-drawer {
+  border: 1px solid var(--wb-border);
+  border-radius: var(--wb-radius);
+  background: linear-gradient(180deg, rgba(24, 32, 41, 0.96), rgba(16, 21, 27, 0.98));
+  box-shadow: var(--wb-shadow);
+}
+
+.page-card,
+.widget-card,
+.split-pane,
+.detail-drawer,
+.panel-card {
+  padding: 18px;
+}
+
+.split-pane__body,
+.stack {
+  display: grid;
+  gap: 12px;
+}
+
+.list-card {
+  border: 1px solid var(--wb-border);
+  border-radius: 14px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.section-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.section-grid--two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.bottom-tray {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--wb-gap);
+}
+
+.key-value-list {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 8px 12px;
+  margin: 0;
+}
+
+.key-value-list dt {
+  color: var(--wb-text-muted);
+}
+
+.key-value-list dd {
+  margin: 0;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 0.78rem;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--wb-text);
+}
+
+.status-badge[data-tone="success"] {
+  background: rgba(124, 188, 120, 0.18);
+  color: #b5e0b3;
+}
+
+.status-badge[data-tone="warning"] {
+  background: rgba(216, 155, 60, 0.16);
+  color: #f2cb84;
+}
+
+.markdown-renderer {
+  line-height: 1.7;
+}
+
+.markdown-renderer h1,
+.markdown-renderer h2,
+.markdown-renderer h3 {
+  margin: 1.1em 0 0.5em;
+}
+
+.empty-state,
+.loading-panel {
+  border: 1px dashed var(--wb-border);
+  border-radius: 14px;
+  padding: 20px;
+  color: var(--wb-text-muted);
+}
+
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+}
+
+.chart-frame {
+  height: 280px;
+}
+
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip {
+  border-radius: 999px;
+  border: 1px solid var(--wb-border);
+  padding: 5px 10px;
+  color: var(--wb-text-muted);
+}
+
+.action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.primary-button,
+.ghost-button {
+  border: none;
+  border-radius: 12px;
+  padding: 10px 14px;
+  cursor: pointer;
+}
+
+.primary-button {
+  background: var(--wb-accent);
+  color: #081216;
+}
+
+.ghost-button {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--wb-text);
+}
+
+.ghost-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+@media (max-width: 1180px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .app-shell__nav {
+    position: static;
+    height: auto;
+    border-right: none;
+    border-bottom: 1px solid var(--wb-border);
+  }
+
+  .workbench-grid,
+  .workbench-grid--wide,
+  .bottom-tray,
+  .section-grid--two {
+    grid-template-columns: 1fr;
+  }
+}

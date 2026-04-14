@@ -1,0 +1,16 @@
+:root {
+  --wb-bg: #10151b;
+  --wb-surface: #182029;
+  --wb-surface-strong: #1f2b36;
+  --wb-border: #2b3a47;
+  --wb-text: #eef4f7;
+  --wb-text-muted: #9fb0ba;
+  --wb-accent: #39b7c7;
+  --wb-writeback: #d89b3c;
+  --wb-asset: #7cbc78;
+  --wb-danger: #d95f5f;
+  --wb-radius: 18px;
+  --wb-gap: 16px;
+  --wb-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
+  font-family: "IBM Plex Sans", "PingFang SC", "Noto Sans SC", sans-serif;
+}

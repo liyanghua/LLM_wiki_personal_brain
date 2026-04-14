@@ -1,0 +1,17 @@
+export const ENDPOINTS = {
+  ask: "/api/ask",
+  memoryRecent: "/api/memory/recent",
+  writebackList: "/api/writeback/proposals",
+  writebackDetail: (queryId: string) => `/api/writeback/proposals/${encodeURIComponent(queryId)}`,
+  writebackApply: (queryId: string) => `/api/writeback/proposals/${encodeURIComponent(queryId)}/apply`,
+  ontologyCandidates: "/api/assets/ontology-candidates",
+  skillCandidates: "/api/assets/skill-candidates",
+  profileMethod: "/api/profile/method",
+  profileMemory: "/api/profile/persistent-memory",
+  profileProposals: "/api/profile/proposals",
+  evalReports: "/api/eval/reports",
+  evalReport: (runId: string) => `/api/eval/reports/${encodeURIComponent(runId)}`,
+  wikiTree: "/api/wiki/tree",
+  wikiPages: "/api/wiki/pages",
+  wikiPage: (pageId: string) => `/api/wiki/pages/${encodeURIComponent(pageId)}`,
+} as const;

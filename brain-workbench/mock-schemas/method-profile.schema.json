@@ -1,0 +1,9 @@
+{
+  "type": "object",
+  "required": ["method_profile_id", "preferred_answer_structure", "explanation_pattern"],
+  "properties": {
+    "method_profile_id": { "type": "string" },
+    "preferred_answer_structure": { "type": "array" },
+    "explanation_pattern": { "type": "string" }
+  }
+}

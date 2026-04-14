@@ -1,0 +1,11 @@
+{
+  "type": "object",
+  "required": ["page_id", "page_type", "title", "path", "summary"],
+  "properties": {
+    "page_id": { "type": "string" },
+    "page_type": { "type": "string" },
+    "title": { "type": "string" },
+    "path": { "type": "string" },
+    "summary": { "type": "string" }
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "type": "object",
+  "required": ["candidate_id", "candidate_type", "canonical_name", "wiki_refs", "source_refs"],
+  "properties": {
+    "candidate_id": { "type": "string" },
+    "candidate_type": { "type": "string" },
+    "canonical_name": { "type": "string" },
+    "wiki_refs": { "type": "array" },
+    "source_refs": { "type": "array" }
+  }
+}

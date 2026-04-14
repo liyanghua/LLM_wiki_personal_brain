@@ -1,0 +1,11 @@
+{
+  "type": "object",
+  "required": ["skill_id", "family", "title", "origin_query_ids", "origin_wiki_pages"],
+  "properties": {
+    "skill_id": { "type": "string" },
+    "family": { "type": "string" },
+    "title": { "type": "string" },
+    "origin_query_ids": { "type": "array" },
+    "origin_wiki_pages": { "type": "array" }
+  }
+}

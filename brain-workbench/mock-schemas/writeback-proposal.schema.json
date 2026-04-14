@@ -1,0 +1,9 @@
+{
+  "type": "object",
+  "required": ["query_id", "targets", "created_at"],
+  "properties": {
+    "query_id": { "type": "string" },
+    "targets": { "type": "array" },
+    "created_at": { "type": "string" }
+  }
+}
