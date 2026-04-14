@@ -1,5 +1,12 @@
 export const ENDPOINTS = {
   ask: "/api/ask",
+  extractionStart: "/api/extraction/interviews",
+  extractionDetail: (interviewId: string) =>
+    `/api/extraction/interviews/${encodeURIComponent(interviewId)}`,
+  extractionTurn: (interviewId: string) =>
+    `/api/extraction/interviews/${encodeURIComponent(interviewId)}/turns`,
+  extractionFinish: (interviewId: string) =>
+    `/api/extraction/interviews/${encodeURIComponent(interviewId)}/finish`,
   memoryRecent: "/api/memory/recent",
   writebackList: "/api/writeback/proposals",
   writebackDetail: (queryId: string) => `/api/writeback/proposals/${encodeURIComponent(queryId)}`,

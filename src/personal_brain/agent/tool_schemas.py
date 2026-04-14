@@ -26,3 +26,21 @@ class ProposeWritebackInput(BaseModel):
 
 class RunLintInput(BaseModel):
     include_stale: bool = True
+
+
+class StartExtractionInterviewInput(BaseModel):
+    question: str
+    scene_id: str | None = None
+
+
+class GetExtractionInterviewInput(BaseModel):
+    interview_id: str
+
+
+class ContinueExtractionInterviewInput(BaseModel):
+    interview_id: str
+    user_answer: str
+
+
+class FinishExtractionInterviewInput(BaseModel):
+    interview_id: str

@@ -1,6 +1,6 @@
 <template>
   <section class="panel-card">
-    <h3>Skill Candidates</h3>
+    <h3>技能候选</h3>
     <div class="stack">
       <CandidateCard
         v-for="item in candidates"

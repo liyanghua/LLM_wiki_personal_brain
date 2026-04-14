@@ -9,21 +9,37 @@ export function useWritebackReview() {
   const refs = storeToRefs(store);
 
   async function refresh() {
-    const listPayload = await listWritebackProposals();
-    store.proposals = listPayload.proposals;
-    if (store.selectedQueryId) {
-      store.detail = await getWritebackProposal(store.selectedQueryId);
+    store.loading = true;
+    store.error = "";
+    try {
+      const listPayload = await listWritebackProposals();
+      store.proposals = (listPayload as any).proposals ?? [];
+      if (store.selectedQueryId) {
+        store.detail = await getWritebackProposal(store.selectedQueryId);
+      }
+    } catch (e: any) {
+      store.error = e?.message || "加载沉淀提案失败";
+    } finally {
+      store.loading = false;
     }
   }
 
   async function select(queryId: string) {
     store.selectedQueryId = queryId;
-    store.detail = await getWritebackProposal(queryId);
+    try {
+      store.detail = await getWritebackProposal(queryId);
+    } catch (e: any) {
+      store.error = e?.message || "加载提案详情失败";
+    }
   }
 
   async function approve() {
     if (!store.selectedQueryId) return;
-    store.detail = await approveWritebackProposal(store.selectedQueryId);
+    try {
+      store.detail = await approveWritebackProposal(store.selectedQueryId);
+    } catch (e: any) {
+      store.error = e?.message || "审批操作失败";
+    }
   }
 
   onMounted(refresh);

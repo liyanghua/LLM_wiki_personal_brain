@@ -1,0 +1,46 @@
+[     310ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:4173/favicon.ico:0
+[  185863ms] [ERROR] Failed to load resource: net::ERR_EMPTY_RESPONSE @ http://127.0.0.1:8000/api/writeback/proposals:0
+[  188604ms] [ERROR] Failed to load resource: net::ERR_EMPTY_RESPONSE @ http://127.0.0.1:8000/api/writeback/proposals:0
+[ 1563864ms] [WARNING] [Vue warn]: Unhandled error during execution of setup function 
+  at <AskWorkspacePage onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< null > > 
+  at <RouterView> 
+  at <ConfigProvider theme= {name: dark, common: Object, Alert: Object, Anchor: Object, AutoComplete: Object} theme-overrides= {common: Object} > 
+  at <WorkbenchLayout> 
+  at <App> @ http://127.0.0.1:4173/node_modules/.vite/deps/chunk-6SOJBO4M.js?v=53320c65:2203
+[ 1563864ms] [WARNING] [Vue warn]: Unhandled error during execution of scheduler flush 
+  at <AskWorkspacePage onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< null > > 
+  at <RouterView> 
+  at <ConfigProvider theme= {name: dark, common: Object, Alert: Object, Anchor: Object, AutoComplete: Object} theme-overrides= {common: Object} > 
+  at <WorkbenchLayout> 
+  at <App> @ http://127.0.0.1:4173/node_modules/.vite/deps/chunk-6SOJBO4M.js?v=53320c65:2203
+[ 1563873ms] TypeError: Cannot read properties of undefined (reading 'value')
+    at setup (http://127.0.0.1:4173/src/pages/ask/AskWorkspacePage.vue?t=1776145265698:19:47)
+    at callWithErrorHandling (http://127.0.0.1:4173/node_modules/.vite/deps/chunk-6SOJBO4M.js?v=53320c65:2351:19)
+    at setupStatefulComponent (http://127.0.0.1:4173/node_modules/.vite/deps/chunk-6SOJBO4M.js?v=53320c65:10295:25)
+    at setupComponent (http://127.0.0.1:4173/node_modules/.vite/deps/chunk-6SOJBO4M.js?v=53320c65:10257:36)
+    at mountComponent (http://127.0.0.1:4173/node_modules/.vite/deps/chunk-6SOJBO4M.js?v=53320c65:8183:7)
+    at processComponent (http://127.0.0.1:4173/node_modules/.vite/deps/chunk-6SOJBO4M.js?v=53320c65:8149:9)
+    at patch (http://127.0.0.1:4173/node_modules/.vite/deps/chunk-6SOJBO4M.js?v=53320c65:7646:11)
+    at ReactiveEffect.componentUpdateFn [as fn] (http://127.0.0.1:4173/node_modules/.vite/deps/chunk-6SOJBO4M.js?v=53320c65:8377:9)
+    at ReactiveEffect.run (http://127.0.0.1:4173/node_modules/.vite/deps/chunk-6SOJBO4M.js?v=53320c65:507:19)
+    at http://127.0.0.1:4173/node_modules/.vite/deps/chunk-6SOJBO4M.js?v=53320c65:2689:27
+[ 1563867ms] [WARNING] [Vue warn]: Unhandled error during execution of scheduler flush 
+  at <AskWorkspacePage onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< null > > 
+  at <RouterView> 
+  at <ConfigProvider theme= {name: dark, common: Object, Alert: Object, Anchor: Object, AutoComplete: Object} theme-overrides= {common: Object} > 
+  at <WorkbenchLayout> 
+  at <App> @ http://127.0.0.1:4173/node_modules/.vite/deps/chunk-6SOJBO4M.js?v=53320c65:2203
+[ 1563875ms] TypeError: Cannot read properties of null (reading 'flags')
+    at http://127.0.0.1:4173/node_modules/.vite/deps/chunk-6SOJBO4M.js?v=53320c65:2687:28
+    at callWithErrorHandling (http://127.0.0.1:4173/node_modules/.vite/deps/chunk-6SOJBO4M.js?v=53320c65:2351:33)
+    at flushJobs (http://127.0.0.1:4173/node_modules/.vite/deps/chunk-6SOJBO4M.js?v=53320c65:2559:9)
+[ 1745733ms] [WARNING] [Vue warn]: Unhandled error during execution of scheduler flush 
+  at <AskWorkspacePage onVnodeUnmounted=fn<onVnodeUnmounted> ref=Ref< null > > 
+  at <RouterView> 
+  at <ConfigProvider theme= {name: dark, common: Object, Alert: Object, Anchor: Object, AutoComplete: Object} theme-overrides= {common: Object} > 
+  at <WorkbenchLayout> 
+  at <App> @ http://127.0.0.1:4173/node_modules/.vite/deps/chunk-6SOJBO4M.js?v=53320c65:2203
+[ 1745748ms] TypeError: Cannot read properties of null (reading 'flags')
+    at http://127.0.0.1:4173/node_modules/.vite/deps/chunk-6SOJBO4M.js?v=53320c65:2687:28
+    at callWithErrorHandling (http://127.0.0.1:4173/node_modules/.vite/deps/chunk-6SOJBO4M.js?v=53320c65:2351:33)
+    at flushJobs (http://127.0.0.1:4173/node_modules/.vite/deps/chunk-6SOJBO4M.js?v=53320c65:2559:9)

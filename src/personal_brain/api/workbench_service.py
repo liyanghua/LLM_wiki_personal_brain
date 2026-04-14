@@ -7,6 +7,7 @@ from personal_brain.agent.method_profile import MethodProfileLoader
 from personal_brain.assets.service import AssetBuildService
 from personal_brain.config import BrainConfig
 from personal_brain.eval.runner import EvaluationRunner
+from personal_brain.extraction.service import ExtractionInterviewService
 from personal_brain.models import EvaluationReport, OntologyCandidate, SessionRecord, SkillCandidateManifest, WritebackBundle
 from personal_brain.retrieval.query_engine import QueryEngine
 from personal_brain.utils.files import read_json
@@ -28,12 +29,33 @@ class WorkbenchApiService:
         self.query_engine = QueryEngine(config)
         self.writeback_service = WritebackService(config)
         self.asset_service = AssetBuildService(config)
+        self.extraction_service = ExtractionInterviewService(config)
 
     def ask(self, payload: dict | None = None) -> dict:
         question = str((payload or {}).get("question", "")).strip()
         if not question:
             raise ApiBadRequest("question is required")
         return self.query_engine.ask(question).model_dump(mode="json")
+
+    def start_extraction_interview(self, payload: dict | None = None) -> dict:
+        question = str((payload or {}).get("question", "")).strip()
+        scene_id_raw = (payload or {}).get("scene_id")
+        scene_id = str(scene_id_raw).strip() or None if scene_id_raw is not None else None
+        if not question:
+            raise ApiBadRequest("question is required")
+        return self.extraction_service.start(question, scene_id=scene_id).model_dump(mode="json")
+
+    def get_extraction_interview(self, interview_id: str) -> dict:
+        return self.extraction_service.get(interview_id).model_dump(mode="json")
+
+    def continue_extraction_interview(self, interview_id: str, payload: dict | None = None) -> dict:
+        user_answer = str((payload or {}).get("user_answer", "")).strip()
+        if not user_answer:
+            raise ApiBadRequest("user_answer is required")
+        return self.extraction_service.continue_interview(interview_id, user_answer).model_dump(mode="json")
+
+    def finish_extraction_interview(self, interview_id: str) -> dict:
+        return self.extraction_service.finish(interview_id).model_dump(mode="json")
 
     def recent_memory(self) -> dict:
         session_records = self._load_session_records()

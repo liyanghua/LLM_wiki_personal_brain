@@ -1,6 +1,6 @@
 <template>
   <section class="panel-card">
-    <h3>Wiki Pages</h3>
+    <h3>知识页面</h3>
     <div class="stack">
       <button
         v-for="page in pages"

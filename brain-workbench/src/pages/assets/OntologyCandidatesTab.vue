@@ -1,6 +1,6 @@
 <template>
   <section class="panel-card">
-    <h3>Ontology Candidates</h3>
+    <h3>本体候选</h3>
     <div class="stack">
       <CandidateCard
         v-for="item in candidates"

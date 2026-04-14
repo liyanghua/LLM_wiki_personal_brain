@@ -1,0 +1,236 @@
+{
+  "query_id": "20260414-030254-414220",
+  "session_date": "2026-04-14",
+  "user_query": "品牌经营OS和SUPER指标之间是什么关系？",
+  "question_classification": {
+    "question_type": "open-ended-synthesis",
+    "confidence": 0.6,
+    "cues": [
+      "fallback-synthesis"
+    ]
+  },
+  "recalled_memory": {
+    "recent_session_summaries": [
+      "综合 品牌经营OS、货品全生命周期管理-SUPER指标模型、商品全生命周期运营原则 的信息，可以看到这些页面共同指向同一条知识链路，而不是孤立结论。",
+      "综合 品牌经营OS、货品全生命周期管理-SUPER指标模型、商品全生命周期运营原则 的信息，可以看到这些页面共同指向同一条知识链路，而不是孤立结论。 这也延续了近期会话里重复出现的关注主题。",
+      "综合 品牌经营OS、货品全生命周期管理-SUPER指标模型、商品全生命周期运营原则 的信息，可以看到这些页面共同指向同一条知识链路，而不是孤立结论。 这也延续了近期会话里重复出现的关注主题。"
+    ],
+    "persistent_interests": [
+      "品牌经营OS"
+    ],
+    "persistent_principles": [
+      "知识应优先通过 wiki 作为中间层进行组织和回答。"
+    ],
+    "open_loops": [
+      "是否需要把 SUPER 指标体系单独沉淀为长期原则页？"
+    ]
+  },
+  "ranked_pages": [
+    "wiki/topics/品牌经营os.md",
+    "wiki/sources/货品全生命周期管理-super指标模型.md",
+    "wiki/principles/商品全生命周期运营原则.md",
+    "wiki/projects/儿童学习桌垫单因子测图.md",
+    "wiki/sources/6大维度42个细分变量选择逻辑01.md"
+  ],
+  "selected_evidence": [
+    {
+      "page_id": "topic-品牌经营os",
+      "page_title": "品牌经营OS",
+      "page_path": "wiki/topics/品牌经营os.md",
+      "source_refs": [
+        "raw/conversations/背景选择_访谈日志.md",
+        "raw/industry_docs/淘天商品全生命周期智能运营AI体.md",
+        "raw/industry_docs/电商运营本体核心文档.md",
+        "raw/industry_docs/货品全生命周期管理-SUPER指标模型.md"
+      ],
+      "snippet": "品牌经营OS在当前资料中被描述为一个以人货场协同、全生命周期运营和数据驱动决策为核心的经营框架",
+      "relevance_score": 35.8
+    },
+    {
+      "page_id": "source-货品全生命周期管理super指标模型",
+      "page_title": "货品全生命周期管理-SUPER指标模型",
+      "page_path": "wiki/sources/货品全生命周期管理-super指标模型.md",
+      "source_refs": [
+        "raw/industry_docs/货品全生命周期管理-SUPER指标模型.md"
+      ],
+      "snippet": "货品全生命周期管理-SUPER指标模型",
+      "relevance_score": 19.7
+    },
+    {
+      "page_id": "principle-商品全生命周期运营原则",
+      "page_title": "商品全生命周期运营原则",
+      "page_path": "wiki/principles/商品全生命周期运营原则.md",
+      "source_refs": [
+        "raw/industry_docs/淘天商品全生命周期智能运营AI体.md",
+        "raw/industry_docs/货品全生命周期管理-SUPER指标模型.md",
+        "raw/conversations/背景选择_访谈日志.md",
+        "raw/industry_docs/电商运营本体核心文档.md"
+      ],
+      "snippet": "商品全生命周期运营原则",
+      "relevance_score": 17.9
+    }
+  ],
+  "answer_summary": "综合 品牌经营OS、货品全生命周期管理-SUPER指标模型、商品全生命周期运营原则 的信息，可以看到这些页面共同指向同一条知识链路，而不是孤立结论。 这也延续了近期会话里重复出现的关注主题。",
+  "open_follow_ups": [
+    "这个回答里哪些结论值得继续追问或写回 wiki？",
+    "是否需要把 SUPER 指标体系单独沉淀为长期原则页？"
+  ],
+  "method_profile_id": "default-grounded",
+  "template_id": "hybrid-mapping",
+  "writeback_plan": {
+    "query_id": "20260414-030254-414220",
+    "question": "品牌经营OS和SUPER指标之间是什么关系？",
+    "targets": [
+      {
+        "target": "wiki/topics/品牌经营os.md",
+        "action": "merge-update",
+        "rationale": "答案涉及已有 topic 页，适合追加可复用综合结论。",
+        "confidence": 0.95,
+        "long_term_value": "把高频问答沉淀回主题页，降低未来重复解释成本。",
+        "evidence_refs": [
+          "raw/conversations/背景选择_访谈日志.md",
+          "raw/industry_docs/淘天商品全生命周期智能运营AI体.md",
+          "raw/industry_docs/电商运营本体核心文档.md",
+          "raw/industry_docs/货品全生命周期管理-SUPER指标模型.md"
+        ],
+        "content_preview": "综合 品牌经营OS、货品全生命周期管理-SUPER指标模型、商品全生命周期运营原则 的信息，可以看到这些页面共同指向同一条知识链路，而不是孤立结论。 这也延续了近期会话里重复出现的关注主题。",
+        "approval_status": "approved-for-apply",
+        "rejection_reason": null
+      },
+      {
+        "target": "wiki/principles/商品全生命周期运营原则.md",
+        "action": "merge-update",
+        "rationale": "答案与现有 principle 页直接相关，适合沉淀长期适用的解释。",
+        "confidence": 0.95,
+        "long_term_value": "将临时回答升格为可复用原则，提升长期检索价值。",
+        "evidence_refs": [
+          "raw/conversations/背景选择_访谈日志.md",
+          "raw/industry_docs/淘天商品全生命周期智能运营AI体.md",
+          "raw/industry_docs/电商运营本体核心文档.md",
+          "raw/industry_docs/货品全生命周期管理-SUPER指标模型.md"
+        ],
+        "content_preview": "综合 品牌经营OS、货品全生命周期管理-SUPER指标模型、商品全生命周期运营原则 的信息，可以看到这些页面共同指向同一条知识链路，而不是孤立结论。 这也延续了近期会话里重复出现的关注主题。",
+        "approval_status": "approved-for-apply",
+        "rejection_reason": null
+      },
+      {
+        "target": "wiki/decisions/品牌经营os和super指标之间是什么关系-qa-note.md",
+        "action": "create-or-merge",
+        "rationale": "当前问题跨页综合度较高，适合形成 decision/QA note。",
+        "confidence": 0.95,
+        "long_term_value": "把多页综合关系沉淀为决策笔记，便于后续追踪和复用。",
+        "evidence_refs": [
+          "raw/conversations/背景选择_访谈日志.md",
+          "raw/industry_docs/淘天商品全生命周期智能运营AI体.md",
+          "raw/industry_docs/电商运营本体核心文档.md",
+          "raw/industry_docs/货品全生命周期管理-SUPER指标模型.md"
+        ],
+        "content_preview": "综合 品牌经营OS、货品全生命周期管理-SUPER指标模型、商品全生命周期运营原则 的信息，可以看到这些页面共同指向同一条知识链路，而不是孤立结论。 这也延续了近期会话里重复出现的关注主题。",
+        "approval_status": "approved-for-apply",
+        "rejection_reason": null
+      },
+      {
+        "target": "ontology/candidates/concept/品牌经营os和super指标之间是什么关系.json",
+        "action": "candidate-only",
+        "rationale": "该回答可作为后续 ontology candidate 的输入，但仍需从 wiki 统一抽取。",
+        "confidence": 0.85,
+        "long_term_value": "为后续稳定概念抽取提供候选入口。",
+        "evidence_refs": [
+          "raw/conversations/背景选择_访谈日志.md",
+          "raw/industry_docs/淘天商品全生命周期智能运营AI体.md",
+          "raw/industry_docs/电商运营本体核心文档.md",
+          "raw/industry_docs/货品全生命周期管理-SUPER指标模型.md"
+        ],
+        "content_preview": "综合 品牌经营OS、货品全生命周期管理-SUPER指标模型、商品全生命周期运营原则 的信息，可以看到这些页面共同指向同一条知识链路，而不是孤立结论。 这也延续了近期会话里重复出现的关注主题。",
+        "approval_status": "pending",
+        "rejection_reason": "Candidate-only target reserved for later asset build flow."
+      },
+      {
+        "target": "skills/candidates/topic_synthesis",
+        "action": "candidate-only",
+        "rationale": "该回答模式具有技能化潜力，但需要多轮样本后再打包。",
+        "confidence": 0.85,
+        "long_term_value": "把高价值工作模式转化为候选技能模板。",
+        "evidence_refs": [
+          "raw/conversations/背景选择_访谈日志.md",
+          "raw/industry_docs/淘天商品全生命周期智能运营AI体.md",
+          "raw/industry_docs/电商运营本体核心文档.md",
+          "raw/industry_docs/货品全生命周期管理-SUPER指标模型.md"
+        ],
+        "content_preview": "综合 品牌经营OS、货品全生命周期管理-SUPER指标模型、商品全生命周期运营原则 的信息，可以看到这些页面共同指向同一条知识链路，而不是孤立结论。 这也延续了近期会话里重复出现的关注主题。",
+        "approval_status": "pending",
+        "rejection_reason": "Candidate-only target reserved for later asset build flow."
+      }
+    ],
+    "target_paths": [
+      "wiki/topics/品牌经营os.md",
+      "wiki/principles/商品全生命周期运营原则.md",
+      "wiki/decisions/品牌经营os和super指标之间是什么关系-qa-note.md",
+      "ontology/candidates/concept/品牌经营os和super指标之间是什么关系.json",
+      "skills/candidates/topic_synthesis"
+    ],
+    "applied_targets": [],
+    "created_at": "2026-04-14T03:02:54Z"
+  },
+  "asset_value_signals": {
+    "overall_score": 1.0,
+    "reasons": [
+      "multi-page evidence",
+      "multi-source grounding",
+      "cross-page-type synthesis",
+      "recent recurrence",
+      "follow-up potential"
+    ],
+    "signals": {
+      "evidence_density": 0.35,
+      "source_grounding": 0.25,
+      "page_diversity": 0.2,
+      "recent_recurrence": 0.1,
+      "follow_up_depth": 0.1
+    }
+  },
+  "writeback_proposed": true,
+  "writeback_targets": [
+    "wiki/topics/品牌经营os.md",
+    "wiki/principles/商品全生命周期运营原则.md",
+    "wiki/decisions/品牌经营os和super指标之间是什么关系-qa-note.md",
+    "ontology/candidates/concept/品牌经营os和super指标之间是什么关系.json",
+    "skills/candidates/topic_synthesis"
+  ],
+  "persistent_memory_proposals": [
+    {
+      "proposal_type": "principle",
+      "target_file": "memory/persistent/principles.json",
+      "key": "综合 品牌经营OS、货品全生命周期管理-SUPER指标模型、",
+      "value": "综合 品牌经营OS、货品全生命周期管理-SUPER指标模型、商品全生命周期运营原则 的信息，可以看到这些页面共同指向同一条知识链路，而不是孤立结论。 这也延续了近期会话里重复出现的关注主题。",
+      "rationale": "Answer summary maps to a durable principle-oriented pattern."
+    },
+    {
+      "proposal_type": "open_loop",
+      "target_file": "memory/persistent/open_loops.json",
+      "key": "follow_up_0",
+      "value": {
+        "question": "这个回答里哪些结论值得继续追问或写回 wiki？",
+        "status": "open"
+      },
+      "rationale": "Follow-up question remains unresolved and may matter across sessions."
+    },
+    {
+      "proposal_type": "open_loop",
+      "target_file": "memory/persistent/open_loops.json",
+      "key": "follow_up_1",
+      "value": {
+        "question": "是否需要把 SUPER 指标体系单独沉淀为长期原则页？",
+        "status": "open"
+      },
+      "rationale": "Follow-up question remains unresolved and may matter across sessions."
+    }
+  ],
+  "method_update_suggestions": [],
+  "style_update_suggestions": [
+    "当前方法配置与答案结构基本一致，无需自动更新。"
+  ],
+  "style_profile_id": "default-grounded",
+  "answer_path": "memory/session/answers/20260414-030254-414220.md",
+  "created_at": "2026-04-14T03:02:54Z"
+}

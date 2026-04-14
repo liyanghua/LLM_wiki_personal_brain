@@ -1,6 +1,6 @@
 <template>
   <section class="panel-card">
-    <h3>Proposal List</h3>
+    <h3>提案列表</h3>
     <div class="stack">
       <button
         v-for="proposal in proposals"
@@ -10,7 +10,7 @@
       >
         <ProposalCard
           :question="proposal.question"
-          :target="proposal.primary_target ?? proposal.targets[0] ?? 'unknown'"
+          :target="proposal.primary_target ?? proposal.targets[0] ?? '未知'"
           :status="proposal.primary_status ?? 'pending'"
           :confidence="proposal.primary_confidence ?? 0"
         />

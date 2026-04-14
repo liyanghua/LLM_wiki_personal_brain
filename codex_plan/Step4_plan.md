@@ -1,0 +1,112 @@
+# Step4 Brain Workbench 前端工作台实施计划
+
+## 摘要
+- 在仓库根目录新建独立前端应用 `brain-workbench/`，使用 `Vue 3 + TypeScript + Vite + Vue Router + Pinia + Naive UI + ECharts`，严格遵循 Step4 的目录分层和命名规范。
+- 前端定位为“Personal Brain OS 的薄工作台”，不是聊天页、不是 CMS、也不是笔记浏览器；界面默认中文文案、英文代码命名，视觉采用中性深色工作台风格，信息密但可读。
+- 数据策略采用“真实后端优先 + mock 回退”：`ask` 与可直接映射现有 Python 服务/文件的只读页面走真实 API；缺少后端动作支持的按钮保留完整 UI，但用 `TODO(BACKEND_ENDPOINT_BINDING)` 明确标注未绑定。
+
+## 公共接口与结构
+- 路由固定为：
+  - `/workspace/ask`
+  - `/workspace/writeback`
+  - `/workspace/assets`
+  - `/workspace/profile`
+  - `/workspace/eval`
+  - `/workspace/wiki`
+- 目录结构固定采用 `src/app`, `src/pages`, `src/widgets`, `src/features`, `src/entities`, `src/shared`，并严格执行：
+  - 路由页 `*Page.vue`
+  - 分栏面板 `*Pane.vue`
+  - 独立面板 `*Panel.vue`
+  - 抽屉 `*Drawer.vue`
+  - composable `useXxx.ts`
+  - store `*.store.ts`
+  - 实体目录 `types.ts / schema.ts / adapters.ts`
+- Pinia store 固定包含：
+  - `ui.store.ts`
+  - `query.store.ts`
+  - `writeback.store.ts`
+  - `assets.store.ts`
+  - `profile.store.ts`
+  - `eval.store.ts`
+  - `wiki.store.ts`
+- 前端实体类型直接镜像当前 Python 模型语义，并在前端侧做视图映射：
+  - `AskResult`
+  - `WritebackBundle` / `WritebackTargetDecision`
+  - `OntologyCandidate`
+  - `SkillCandidateManifest`
+  - `MethodProfile`
+  - `EvaluationReport`
+  - `WikiPage`
+- 共享依赖默认选型：
+  - `zod` 做 `schema.ts`
+  - `markdown-it + DOMPurify` 做 markdown/wiki/proposal 渲染
+  - `vue-echarts` 展示 eval 指标
+  - `dayjs` 处理时间显示
+- 环境变量固定提供：
+  - `VITE_API_BASE_URL`
+  - `VITE_DATA_MODE=live|mock`
+
+## 关键实现
+- 前端脚手架：
+  - 在 `brain-workbench/` 下建立完整 Vite 应用、`README.md`、`.env.example`、`public/mock/`、`mock-schemas/`。
+  - `WorkbenchLayout` 采用左侧主导航 + 中央工作区 + 可折叠右侧细节区；桌面端保留三栏，窄屏下右栏收进 drawer、底部 tray 改为 tabs。
+  - 主题采用石墨灰底色，证据/检索用青色系，writeback 用琥珀色，ontology/skills 用苔绿色，避免聊天气泡式布局。
+- Feature/API 层：
+  - 每条业务链路都有 `api.ts / model.ts / mapper.ts / useXxx.ts`。
+  - `shared/api` 提供 `httpClient` 与 `mockClient` 双 provider；默认 `live`，接口 404/不可达时可回退到 mock。
+  - `public/mock` 与 `src/mocks` 使用真实语料语义构造样例，至少覆盖“品牌经营OS”“商品全生命周期运营原则”“儿童学习桌垫单因子测图”。
+- 页面落地：
+  - `AskWorkspacePage`：左侧 recent queries / quick topics，中间问题输入与 `Fact / Synthesis / Interpretation / Recommendation / Citations`，右侧 hit pages / session memory / method mode，底部 evidence / writeback preview。
+  - `WritebackReviewPage`：proposal list + detail + merge preview；`approve` 绑定真实 apply，`reject/edit` 先做本地审阅态与禁用说明，不直接改 repo 资产。
+  - `AssetCandidatesPage`：ontology / skill 两个 tab，支持 detail drawer；`promote/merge/discard` 先保持审阅 UI 和 mock action，不绕过 Step3 的人工审批边界。
+  - `ProfileWorkspacePage`：展示 method profile、style/method suggestions、persistent memory proposals、persistent memory 摘要。
+  - `EvalReportsPage`：展示 report list、detail、metrics chart、trend chart，只读取已存在报告，不在首版里从前端触发 `eval` 运行。
+  - `WikiExplorerPage`：page type tree、page list、page detail、linked pages、backlinks、markdown viewer。
+- 后端 API 桥接：
+  - 扩展 [apps/api/server.py](/Users/yichen/Desktop/OntologyBrain/LLM-wiki/apps/api/server.py) 为最小 JSON API 路由层，保留现有 `/health` 和 `/ask`，并新增 `/api/*` 别名供前端使用。
+  - 首版真实开放的接口：
+    - `GET /api/health`
+    - `POST /api/ask`
+    - `GET /api/memory/recent`
+    - `GET /api/writeback/proposals`
+    - `GET /api/writeback/proposals/:query_id`
+    - `POST /api/writeback/proposals/:query_id/apply`
+    - `GET /api/assets/ontology-candidates`
+    - `GET /api/assets/skill-candidates`
+    - `GET /api/profile/method`
+    - `GET /api/profile/persistent-memory`
+    - `GET /api/profile/proposals`
+    - `GET /api/eval/reports`
+    - `GET /api/eval/reports/:run_id`
+    - `GET /api/wiki/tree`
+    - `GET /api/wiki/pages`
+    - `GET /api/wiki/pages/:page_id`
+  - 这些接口只做现有 Python 服务与文件资产的薄封装，不引入数据库、不改变 CLI 语义、不自动晋升 ontology/skills。
+- 文档：
+  - `brain-workbench/README.md` 提供安装、开发、mock/live 模式、与 Python API 联调说明。
+  - 根 README 增加一段入口说明，指向新前端工作台。
+
+## 测试计划
+- 前端使用 `Vitest + Vue Test Utils`：
+  - 路由注册与六个页面挂载 smoke test。
+  - `AskWorkspacePage` 正确渲染五段回答、引用、evidence tray、recent queries。
+  - `WritebackReviewPage` 正确显示 proposal 列表、详情、merge preview，以及按钮可用/禁用状态。
+  - `AssetCandidatesPage` 正确切换 ontology/skill tab 并打开 detail drawer。
+  - `ProfileWorkspacePage` 与 `EvalReportsPage` 正确映射 method profile、proposal、指标图表数据。
+  - `WikiExplorerPage` 正确渲染 type tree、page detail、markdown 与 links/backlinks。
+  - `httpClient -> mockClient` 回退策略可工作。
+- 后端继续用 `pytest`：
+  - 新增 `/api/*` 接口响应结构测试。
+  - 保证现有 `/ask`、`/health` 兼容不回归。
+  - `writeback apply` 只调用既有 writeback service，不新增越权写入。
+- 集成验收：
+  - 启动 Python API 与 Vite dev server 后，六个页面都能进入并加载真实或 mock 数据。
+  - 询问“品牌经营OS和SUPER指标之间是什么关系？”时，Ask 页能看到结构化答案、evidence、writeback preview。
+  - Writeback、Assets、Profile、Eval、Wiki 页面能浏览当前仓库已有资产，不要求用户先手工改数据格式。
+
+## 假设与默认
+- 前端固定放在 `brain-workbench/`，不挂到 `apps/` 下。
+- 包管理器默认使用 `npm`，不额外引入 monorepo 工具。
+- 首版不做登录、权限、SSR，也不把前端直接耦合到 Hermes runtime。
+- `ask` 与只读浏览接口优先走真实后端；缺失的审阅/晋升动作保留 UI 但不假装已落库，必须显式标注 `TODO(BACKEND_ENDPOINT_BINDING)`。
+- 前端首版只消费“当前已生成的 wiki / memory / ontology candidates / skills candidates / eval reports”，不从页面里触发 `build-assets` 或 `eval` 运行。

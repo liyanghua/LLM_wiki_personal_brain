@@ -1,6 +1,6 @@
 <template>
   <section class="panel-card">
-    <h3>Style / Method Suggestions</h3>
+    <h3>风格与方法建议</h3>
     <ProfileProposalCard
       v-for="item in items"
       :key="`${item.query_id}-${item.title}`"

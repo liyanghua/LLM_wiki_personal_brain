@@ -1,4 +1,4 @@
 export const appMeta = {
-  title: "Brain Workbench",
-  subtitle: "A thin workbench over Personal Brain OS",
+  title: "专家知识工作台",
+  subtitle: "Personal Brain OS · 知识分析与资产管理",
 };

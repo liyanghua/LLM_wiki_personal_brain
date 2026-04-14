@@ -40,6 +40,10 @@ class BrainPaths(BaseModel):
         return self.root / "ontology"
 
     @property
+    def ontology_scenes(self) -> Path:
+        return self.ontology / "scenes"
+
+    @property
     def memory(self) -> Path:
         return self.root / "memory"
 
@@ -78,6 +82,14 @@ class BrainPaths(BaseModel):
     @property
     def writeback_dir(self) -> Path:
         return self.memory / "session" / "writeback"
+
+    @property
+    def extraction_dir(self) -> Path:
+        return self.memory / "session" / "extraction"
+
+    @property
+    def extraction_summaries_dir(self) -> Path:
+        return self.extraction_dir / "summaries"
 
     @property
     def persistent_profile(self) -> Path:
@@ -120,6 +132,15 @@ class BrainPaths(BaseModel):
     def session_summary_path(self, day: str) -> Path:
         return self.session_summaries_dir / f"{day}.md"
 
+    def extraction_day_dir(self, day: str) -> Path:
+        return self.extraction_dir / day
+
+    def extraction_state_path(self, day: str, interview_id: str) -> Path:
+        return self.extraction_day_dir(day) / f"{interview_id}.json"
+
+    def extraction_summary_path(self, day: str) -> Path:
+        return self.extraction_summaries_dir / f"{day}.md"
+
     def ensure(self) -> None:
         for path in [
             self.raw_brain,
@@ -136,9 +157,12 @@ class BrainPaths(BaseModel):
             self.ontology / "profiles",
             self.ontology / "schemas",
             self.ontology / "evidence_index",
+            self.ontology_scenes,
             self.ontology_candidates,
             self.memory / "session",
             self.session_summaries_dir,
+            self.extraction_dir,
+            self.extraction_summaries_dir,
             self.memory / "persistent",
             self.memory / "skills",
             self.memory / "summaries",

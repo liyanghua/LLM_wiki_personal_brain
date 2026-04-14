@@ -9,7 +9,13 @@ export function useSkillCandidates() {
   const refs = storeToRefs(store);
 
   onMounted(async () => {
-    store.skillCandidates = await listSkillCandidates();
+    try {
+      store.skillCandidates = await listSkillCandidates();
+    } catch (e: any) {
+      if (!store.error) {
+        store.error = e?.message || "加载技能候选失败";
+      }
+    }
   });
 
   return refs;

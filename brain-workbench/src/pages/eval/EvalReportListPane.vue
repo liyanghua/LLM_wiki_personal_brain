@@ -1,6 +1,6 @@
 <template>
   <section class="panel-card">
-    <h3>Eval Reports</h3>
+    <h3>评估报告列表</h3>
     <div class="stack">
       <button
         v-for="item in reports"

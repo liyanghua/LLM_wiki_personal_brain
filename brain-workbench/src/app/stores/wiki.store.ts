@@ -1,6 +1,16 @@
 import { defineStore } from "pinia";
 import type { WikiPageEntity } from "@/entities/wiki-page/types";
-import { wikiDetailMock, wikiPagesMock, wikiTreeMock } from "@/mocks/wiki.mock";
+
+const emptyDetail: WikiPageEntity = {
+  page_id: "",
+  page_type: "",
+  title: "",
+  path: "",
+  summary: "",
+  source_refs: [],
+  links_to: [],
+  updated_at: "",
+};
 
 export const useWikiStore = defineStore("wiki", {
   state: (): {
@@ -9,11 +19,13 @@ export const useWikiStore = defineStore("wiki", {
     selectedPageId: string;
     detail: WikiPageEntity;
     loading: boolean;
+    error: string;
   } => ({
-    pages: wikiPagesMock.pages,
-    tree: wikiTreeMock.tree,
-    selectedPageId: wikiDetailMock.page.page_id,
-    detail: wikiDetailMock.page,
+    pages: [],
+    tree: [],
+    selectedPageId: "",
+    detail: emptyDetail,
     loading: false,
+    error: "",
   }),
 });

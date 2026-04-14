@@ -1,6 +1,14 @@
 import { defineStore } from "pinia";
 import type { WritebackBundleEntity } from "@/entities/writeback-proposal/types";
-import { writebackDetailMock, writebackListMock } from "@/mocks/writeback.mock";
+
+const emptyDetail: WritebackBundleEntity = {
+  query_id: "",
+  question: "",
+  created_at: "",
+  target_paths: [],
+  applied_targets: [],
+  targets: [],
+};
 
 export const useWritebackStore = defineStore("writeback", {
   state: (): {
@@ -8,10 +16,12 @@ export const useWritebackStore = defineStore("writeback", {
     selectedQueryId: string;
     detail: WritebackBundleEntity;
     loading: boolean;
+    error: string;
   } => ({
-    proposals: writebackListMock.proposals,
-    selectedQueryId: writebackDetailMock.query_id,
-    detail: writebackDetailMock,
+    proposals: [],
+    selectedQueryId: "",
+    detail: emptyDetail,
     loading: false,
+    error: "",
   }),
 });

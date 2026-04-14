@@ -2,8 +2,8 @@
   <section class="panel-card stack">
     <h3>{{ detail.title }}</h3>
     <p>{{ detail.summary }}</p>
-    <WikiLinkList title="Linked Pages" :links="detail.linked_pages ?? []" />
-    <WikiLinkList title="Backlinks" :links="backlinks" />
+    <WikiLinkList title="关联页面" :links="detail.linked_pages ?? []" />
+    <WikiLinkList title="反向链接" :links="backlinks" />
     <WikiMarkdownViewer :source="detail.markdown ?? ''" />
   </section>
 </template>

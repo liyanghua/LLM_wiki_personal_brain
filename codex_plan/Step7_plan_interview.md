@@ -1,0 +1,129 @@
+# Ask Workspace 交互式问答前端对接计划
+
+## Summary
+- 先把 `brain-workbench` 的 Ask Workspace 从“单轮 `/api/ask` 页面”升级为“双模式工作区”，直接对接已存在的 extraction API。
+- Ask 页面默认进入 `Extraction Interview`，保留 `Quick Answer` 切换，满足“先体验交互式问答版”的目标。
+- 不新增独立路由，继续使用 `/workspace/ask`，通过前端状态和 URL query 维护当前模式与 `interview_id`。
+
+## Key Changes
+- 扩展前端 API 与实体层：
+  - 在 `brain-workbench/src/shared/api/endpoints.ts` 增加 extraction 端点：
+    - `POST /api/extraction/interviews`
+    - `GET /api/extraction/interviews/{interview_id}`
+    - `POST /api/extraction/interviews/{interview_id}/turns`
+    - `POST /api/extraction/interviews/{interview_id}/finish`
+  - 新增 `entities/extraction-interview/` 的 `types.ts`、`schema.ts`、`adapters.ts`，定义并校验 `ExtractionInterviewState` 前端实体。
+  - `features/query/api.ts` 增加 `startExtractionInterview`、`getExtractionInterview`、`continueExtractionInterview`、`finishExtractionInterview`，保留现有 `askQuestion`。
+- 重构 Ask 页面状态模型，但不拆路由：
+  - `app/stores/query.store.ts` 改为同时持有：
+    - `mode: "extraction" | "quick"`
+    - `quickResult`
+    - `extractionState`
+    - `questionDraft`
+    - `followupAnswerDraft`
+    - `selectedCandidateQuestion`
+    - `loading`
+    - `error`
+  - `features/query/useAskWorkspace.ts` 负责：
+    - 页面加载时读取 URL query 中的 `mode` 和 `interview_id`
+    - `mode=extraction` 且有 `interview_id` 时调用 `GET` 恢复会话
+    - 默认无 query 时进入 `Extraction Interview`
+    - 切换模式时更新 URL，不新建页面
+- Ask Workspace 页面改为双模式布局：
+  - Header 增加模式切换控件：`Extraction Interview` / `Quick Answer`
+  - `Quick Answer` 保持当前单轮输入、答案、证据、沉淀预览
+  - `Extraction Interview` 渲染五块核心信息：
+    - 当前对象 `current_object`
+    - 当前知识目标 `current_knowledge_goal`
+    - 已知槽 / 缺失槽
+    - 当前答案
+    - 下一问候选 + projected writeback level
+  - 页面行为固定为：
+    - 首次输入问题点击“开始采掘”调用 start
+    - 候选问题列表点击后只设置“当前追问提示”，不单独发请求
+    - 用户在回答框输入后点击“继续采掘”调用 continue
+    - 点击“结束并查看沉淀”调用 finish
+    - 完成后页面进入只读完成态，并显示 staged writeback
+    - 点击“开始新的采掘”清空当前 extraction 状态并移除 `interview_id`
+- 组件与展示策略：
+  - 复用现有 `StatePanel`、`AnswerCard`、`EvidenceList`、`MergePreviewPanel`
+  - 新增最少量 extraction 专用展示组件即可，不做整套设计重写：
+    - 槽位状态卡
+    - 候选追问列表
+    - 分层写回预览卡
+    - Retrieval buckets 简版面板
+  - 右侧信息区在 extraction 模式下显示：
+    - `question_type`
+    - `status`
+    - `stop_decision.reason`
+    - `projected_writeback_level`
+  - 底部 tray 在 extraction 模式下显示：
+    - `retrieval_buckets.evidence_pages`
+    - `staged_writeback.knowledge_level / asset_level` 预览
+- URL 与恢复策略固定如下：
+  - `/workspace/ask?mode=extraction&interview_id=...` 表示当前处于交互式问答会话
+  - `/workspace/ask?mode=quick` 表示当前处于单轮模式
+  - 切到 quick 时不删除内存中的 extraction state，但从 URL 移除 `interview_id`
+  - 刷新页面时仅在 URL 中带 `interview_id` 的情况下恢复会话
+  - 本期不做“历史 interview 列表”或“选择旧 interview”功能
+- 与现有脏工作区协同的实施约束：
+  - 直接在当前已经中文化、live-data 化的 Ask 页面文件上增量修改
+  - 不回退现有 `query.store.ts`、`features/query/*`、`pages/ask/*` 的用户改动
+  - 不触碰其他工作台页面
+
+## Important Interfaces
+- 新增前端 extraction 实体至少包含：
+  - `interview_id`
+  - `interaction_mode`
+  - `status`
+  - `turn_index`
+  - `current_object`
+  - `current_knowledge_goal`
+  - `known_slots`
+  - `missing_slots`
+  - `retrieval_buckets`
+  - `current_answer_markdown`
+  - `current_answer_summary`
+  - `next_question_plan`
+  - `stop_decision`
+  - `staged_writeback`
+  - `state_path`
+- Ask store 对外暴露的操作固定为：
+  - `submitQuick(question)`
+  - `startExtraction(question)`
+  - `continueExtraction(answer)`
+  - `finishExtraction()`
+  - `switchMode(mode)`
+  - `resetExtraction()`
+- 候选问题交互固定为：
+  - `selectedCandidateQuestion` 仅用于 UI 引导
+  - continue 请求体仍只发送 `user_answer`
+  - 若用户未手动选择候选问题，默认展示第一条 candidate question 作为当前提示
+
+## Test Plan
+- 单元测试：
+  - extraction entity schema 能正确解析后端响应，并对缺字段报错
+  - `features/query/api.ts` 命中正确 extraction endpoints
+  - `useAskWorkspace` 在三种情况下行为正确：
+    - 默认进入 extraction
+    - 带 `interview_id` 恢复会话
+    - quick/extraction 切换不丢失当前 store 状态
+- 组件测试：
+  - Ask 页面渲染模式切换器
+  - extraction 模式能显示对象、知识目标、已知/缺失槽、当前答案、候选问题
+  - 点击候选问题后更新当前提示
+  - finish 后显示 staged writeback 和完成态
+  - quick 模式仍可渲染现有答案区与证据区
+- 集成/验收：
+  - 本地 `brain-workbench` 连真实 API 时，用户能完成一次：
+    - 开始 extraction
+    - 回答至少一轮 follow-up
+    - finish
+    - 看见分层写回预览
+  - API 不可达时，Ask 页面通过现有 `StatePanel` 给出清晰错误，不出现白屏
+
+## Assumptions
+- 本期目标是“可体验的交互式问答版”，不是最终版工作台；不做 interview 历史管理、多人协作或复杂导航。
+- `Extraction Interview` 作为默认模式，`Quick Answer` 作为保留兼容模式。
+- 后端 extraction 合同以当前已实现字段为准；前端按它适配，不要求再改后端语义。
+- 当前机器上本地 API 服务偶发不可用，因此前端需要保留并强化错误态，但不把“诊断本地服务器异常”扩成此任务的主范围。

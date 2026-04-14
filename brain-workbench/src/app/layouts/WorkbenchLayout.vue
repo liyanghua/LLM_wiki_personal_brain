@@ -6,7 +6,7 @@
           <p class="eyebrow">Personal Brain OS</p>
           <h1>{{ appMeta.title }}</h1>
           <p>{{ appMeta.subtitle }}</p>
-          <small>{{ mockModeLabel }}</small>
+          <small>{{ dataStatusLabel }}</small>
         </div>
         <nav class="nav-list">
           <RouterLink v-for="item in WORKSPACE_NAV" :key="item.path" :to="item.path" class="nav-link">
@@ -26,7 +26,7 @@
 import { NConfigProvider, darkTheme } from "naive-ui";
 import { RouterLink } from "vue-router";
 import { appMeta } from "@/app/providers/app-provider";
-import { mockModeLabel } from "@/app/providers/mock-provider";
+import { dataStatusLabel } from "@/app/providers/mock-provider";
 import { themeOverrides } from "@/app/providers/theme-provider";
 import { WORKSPACE_NAV } from "@/shared/constants/routes";
 </script>

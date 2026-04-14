@@ -1,6 +1,19 @@
 import { defineStore } from "pinia";
 import type { MethodProfileEntity } from "@/entities/method-profile/types";
-import { methodProfileMock, persistentMemoryMock, profileProposalsMock } from "@/mocks/profile.mock";
+
+const emptyProfile: MethodProfileEntity = {
+  method_profile_id: "",
+  preferred_answer_structure: [],
+  abstraction_depth: "",
+  operationalization_level: "",
+  explanation_pattern: "",
+  reusable_asset_preferences: [],
+  citation_preference: "",
+  assetization_preference: "",
+  favored_output_forms: [],
+  preferred_tone: "",
+  actionability_preference: "",
+};
 
 export const useProfileStore = defineStore("profile", {
   state: (): {
@@ -8,10 +21,12 @@ export const useProfileStore = defineStore("profile", {
     persistentMemory: Record<string, unknown>;
     proposals: Record<string, any>;
     loading: boolean;
+    error: string;
   } => ({
-    methodProfile: methodProfileMock,
-    persistentMemory: persistentMemoryMock,
-    proposals: profileProposalsMock,
+    methodProfile: emptyProfile,
+    persistentMemory: {},
+    proposals: { method_suggestions: [], style_suggestions: [], persistent_memory_proposals: [] },
     loading: false,
+    error: "",
   }),
 });

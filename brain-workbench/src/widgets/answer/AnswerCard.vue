@@ -1,6 +1,6 @@
 <template>
   <section class="widget-card">
-    <h3>Structured Answer</h3>
+    <h3>结构化结论</h3>
     <AnswerSections :sections="sections" />
   </section>
 </template>

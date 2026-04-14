@@ -1,6 +1,12 @@
 import { defineStore } from "pinia";
 import type { EvalReportEntity, EvalReportSummaryEntity } from "@/entities/eval-report/types";
-import { evalReportDetailMock, evalReportsMock } from "@/mocks/eval.mock";
+
+const emptyDetail: EvalReportEntity = {
+  run_id: "",
+  created_at: "",
+  metrics: {},
+  case_results: [],
+};
 
 export const useEvalStore = defineStore("eval", {
   state: (): {
@@ -8,10 +14,12 @@ export const useEvalStore = defineStore("eval", {
     selectedReportId: string;
     detail: EvalReportEntity;
     loading: boolean;
+    error: string;
   } => ({
-    reports: evalReportsMock.reports,
-    selectedReportId: evalReportDetailMock.run_id,
-    detail: evalReportDetailMock,
+    reports: [],
+    selectedReportId: "",
+    detail: emptyDetail,
     loading: false,
+    error: "",
   }),
 });

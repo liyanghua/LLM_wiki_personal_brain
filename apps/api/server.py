@@ -23,6 +23,17 @@ def handle_request(
             return 200, {"status": "ok"}
         if method == "POST" and route in {"/ask", "/api/ask"}:
             return 200, service.ask(payload)
+        if method == "POST" and route == "/api/extraction/interviews":
+            return 200, service.start_extraction_interview(payload)
+        if method == "POST" and route.startswith("/api/extraction/interviews/") and route.endswith("/finish"):
+            interview_id = route.removeprefix("/api/extraction/interviews/").removesuffix("/finish").rstrip("/")
+            return 200, service.finish_extraction_interview(unquote(interview_id))
+        if method == "POST" and route.startswith("/api/extraction/interviews/") and route.endswith("/turns"):
+            interview_id = route.removeprefix("/api/extraction/interviews/").removesuffix("/turns").rstrip("/")
+            return 200, service.continue_extraction_interview(unquote(interview_id), payload)
+        if method == "GET" and route.startswith("/api/extraction/interviews/"):
+            interview_id = route.removeprefix("/api/extraction/interviews/").rstrip("/")
+            return 200, service.get_extraction_interview(unquote(interview_id))
         if method == "GET" and route == "/api/memory/recent":
             return 200, service.recent_memory()
         if method == "GET" and route == "/api/writeback/proposals":
@@ -68,6 +79,11 @@ def handle_request(
 
 
 class BrainRequestHandler(BaseHTTPRequestHandler):
+    def do_OPTIONS(self) -> None:  # noqa: N802
+        self.send_response(204)
+        self._cors_headers()
+        self.end_headers()
+
     def do_GET(self) -> None:  # noqa: N802
         self._dispatch("GET")
 
@@ -76,6 +92,12 @@ class BrainRequestHandler(BaseHTTPRequestHandler):
 
     def log_message(self, format: str, *args) -> None:  # noqa: A003
         return
+
+    def _cors_headers(self) -> None:
+        # Local dev: Vite (5173) calls API on 8000 from the browser.
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
 
     def _dispatch(self, method: str) -> None:
         payload: dict | None = None
@@ -89,6 +111,7 @@ class BrainRequestHandler(BaseHTTPRequestHandler):
     def _send_json(self, status: int, payload: dict) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
+        self._cors_headers()
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()

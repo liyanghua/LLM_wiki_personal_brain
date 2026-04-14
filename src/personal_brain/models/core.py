@@ -280,6 +280,107 @@ class ToolSpec(BaseModel):
     output_schema: dict[str, Any]
 
 
+class SceneSlotDefinition(BaseModel):
+    name: str
+    required: bool = True
+    description: str = ""
+
+
+class SceneSlotSchema(BaseModel):
+    scene_id: str
+    current_object: str | None = None
+    knowledge_goal: str | None = None
+    slots: list[SceneSlotDefinition] = Field(default_factory=list)
+
+
+class CompiledProblem(BaseModel):
+    scene_id: str | None = None
+    slot_schema_source: str
+    current_object: str
+    current_knowledge_goal: str
+    question_type: str
+    known_slots: dict[str, str] = Field(default_factory=dict)
+    missing_slots: list[str] = Field(default_factory=list)
+    recommended_action: str
+    slot_names: list[str] = Field(default_factory=list)
+    cues: list[str] = Field(default_factory=list)
+
+
+class RetrievalHit(BaseModel):
+    title: str
+    path: str
+    snippet: str
+    score: float = 0.0
+    source_refs: list[str] = Field(default_factory=list)
+
+
+class RetrievalBuckets(BaseModel):
+    object_pages: list[RetrievalHit] = Field(default_factory=list)
+    evidence_pages: list[EvidenceItem] = Field(default_factory=list)
+    conversation_hits: list[RetrievalHit] = Field(default_factory=list)
+    pattern_hits: list[RetrievalHit] = Field(default_factory=list)
+    ranked_page_paths: list[str] = Field(default_factory=list)
+    retrieved_sources: list[str] = Field(default_factory=list)
+
+
+class QuestionPlan(BaseModel):
+    next_question_type: str
+    candidate_questions: list[str] = Field(default_factory=list)
+    target_missing_slots: list[str] = Field(default_factory=list)
+    stop_if: list[str] = Field(default_factory=list)
+
+
+class StopDecision(BaseModel):
+    should_stop: bool
+    reason: str
+    confidence: float = 1.0
+
+
+class StagedWriteback(BaseModel):
+    session_level: dict[str, Any] | None = None
+    knowledge_level: dict[str, Any] | None = None
+    asset_level: dict[str, Any] | None = None
+    projected_writeback_level: str = "session-level"
+
+
+class ExtractionTurn(BaseModel):
+    turn_index: int
+    user_input: str
+    compiled_problem: CompiledProblem | None = None
+    retrieval_buckets: RetrievalBuckets | None = None
+    answer_summary: str = ""
+    answer_markdown: str = ""
+    question_plan: QuestionPlan | None = None
+    newly_filled_slots: list[str] = Field(default_factory=list)
+    created_at: str | None = None
+
+
+class ExtractionInterviewState(BaseModel):
+    interview_id: str
+    root_question: str
+    interaction_mode: str = "extraction-interview"
+    scene_id: str | None = None
+    status: str = "in_progress"
+    question_type: str = "open-ended-synthesis"
+    turn_index: int = 0
+    current_object: str = ""
+    current_knowledge_goal: str = ""
+    known_slots: dict[str, str] = Field(default_factory=dict)
+    missing_slots: list[str] = Field(default_factory=list)
+    retrieval_buckets: RetrievalBuckets | None = None
+    current_answer_markdown: str = ""
+    current_answer_summary: str = ""
+    next_question_plan: QuestionPlan | None = None
+    stop_decision: StopDecision | None = None
+    staged_writeback: StagedWriteback | None = None
+    ranked_pages: list[str] = Field(default_factory=list)
+    retrieved_sources: list[str] = Field(default_factory=list)
+    turns: list[ExtractionTurn] = Field(default_factory=list)
+    state_path: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
 class BuildResult(BaseModel):
     source_pages: list[WikiPage] = Field(default_factory=list)
     derived_pages: list[WikiPage] = Field(default_factory=list)

@@ -1,0 +1,77 @@
+- generic [ref=e4]:
+  - complementary [ref=e5]:
+    - generic [ref=e6]:
+      - paragraph [ref=e7]: Personal Brain OS
+      - heading "专家知识工作台" [level=1] [ref=e8]
+      - paragraph [ref=e9]: Personal Brain OS · 知识分析与资产管理
+      - text: 实时数据
+    - navigation [ref=e10]:
+      - link "问题分析 基于知识库的深度分析与结论生成" [ref=e11] [cursor=pointer]:
+        - /url: /workspace/ask
+        - strong [ref=e12]: 问题分析
+        - paragraph [ref=e13]: 基于知识库的深度分析与结论生成
+      - link "知识沉淀 审阅可沉淀的高价值解释与决策" [ref=e14] [cursor=pointer]:
+        - /url: /workspace/writeback
+        - strong [ref=e15]: 知识沉淀
+        - paragraph [ref=e16]: 审阅可沉淀的高价值解释与决策
+      - link "资产候选 本体与技能资产的候选管理" [ref=e17] [cursor=pointer]:
+        - /url: /workspace/assets
+        - strong [ref=e18]: 资产候选
+        - paragraph [ref=e19]: 本体与技能资产的候选管理
+      - link "分析画像 方法偏好、长期记忆与风格建议" [ref=e20] [cursor=pointer]:
+        - /url: /workspace/profile
+        - strong [ref=e21]: 分析画像
+        - paragraph [ref=e22]: 方法偏好、长期记忆与风格建议
+      - link "评估看板 资产质量、沉淀精度与方法一致性" [ref=e23] [cursor=pointer]:
+        - /url: /workspace/eval
+        - strong [ref=e24]: 评估看板
+        - paragraph [ref=e25]: 资产质量、沉淀精度与方法一致性
+      - link "知识地图 知识页面分类浏览与关系探索" [ref=e26] [cursor=pointer]:
+        - /url: /workspace/wiki
+        - strong [ref=e27]: 知识地图
+        - paragraph [ref=e28]: 知识页面分类浏览与关系探索
+  - main [ref=e29]:
+    - generic [ref=e30]:
+      - generic [ref=e32]:
+        - paragraph [ref=e33]: 分析工作区
+        - heading "问题分析" [level=1] [ref=e34]
+        - paragraph [ref=e35]: 基于知识库进行深度分析，生成结构化结论与沉淀建议。
+      - generic [ref=e36]:
+        - generic [ref=e37]:
+          - heading "最近分析" [level=3] [ref=e38]
+          - generic [ref=e40]: 暂无最近分析记录
+          - heading "高频主题" [level=3] [ref=e41]
+          - generic [ref=e43]: 暂无高频主题
+        - generic [ref=e44]:
+          - generic [ref=e45]:
+            - generic [ref=e47]:
+              - textbox "输入要分析的问题…" [ref=e48]
+              - generic: 输入要分析的问题…
+            - button "分析" [ref=e49] [cursor=pointer]:
+              - generic [ref=e50]: 分析
+          - generic [ref=e51]:
+            - paragraph
+        - generic [ref=e52]:
+          - heading "分析方式" [level=3] [ref=e53]
+          - generic [ref=e54]:
+            - heading "Query Trace" [level=3] [ref=e55]
+            - paragraph
+          - heading "命中知识" [level=3] [ref=e56]
+          - heading "Retrieved Pages" [level=3] [ref=e58]
+          - generic [ref=e59]:
+            - term [ref=e60]: 方法画像
+            - definition [ref=e61]
+            - term [ref=e62]: 答案模板
+            - definition [ref=e63]
+            - term [ref=e64]: 待跟进
+            - definition [ref=e65]: 无
+      - generic [ref=e66]:
+        - generic [ref=e67]:
+          - heading "证据片段" [level=3] [ref=e68]
+          - heading "Evidence" [level=3] [ref=e70]
+        - generic [ref=e71]:
+          - heading "沉淀预览" [level=3] [ref=e72]
+          - generic [ref=e73]:
+            - heading "Merge Preview" [level=3] [ref=e74]
+            - paragraph [ref=e75]: 暂无沉淀预览
+            - generic [ref=e77]: 无

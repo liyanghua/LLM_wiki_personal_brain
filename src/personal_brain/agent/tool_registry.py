@@ -2,13 +2,18 @@ from __future__ import annotations
 
 from personal_brain.agent.memory_recall import MemoryRecall
 from personal_brain.agent.tool_schemas import (
+    ContinueExtractionInterviewInput,
+    FinishExtractionInterviewInput,
+    GetExtractionInterviewInput,
     ProposeWritebackInput,
     ReadPageInput,
     RunLintInput,
     SearchMemoryInput,
     SearchWikiInput,
+    StartExtractionInterviewInput,
 )
 from personal_brain.config import BrainConfig
+from personal_brain.extraction.service import ExtractionInterviewService
 from personal_brain.lint.service import WikiLintService
 from personal_brain.models import ToolSpec
 from personal_brain.retrieval.query_engine import QueryEngine
@@ -22,6 +27,7 @@ class ToolRegistry:
         self.memory_recall = MemoryRecall(config)
         self.writeback_service = WritebackService(config)
         self.lint_service = WikiLintService(config)
+        self.extraction_service = ExtractionInterviewService(config)
 
     def list_specs(self) -> list[ToolSpec]:
         return [
@@ -55,6 +61,30 @@ class ToolRegistry:
                 input_schema=RunLintInput.model_json_schema(),
                 output_schema={"type": "object", "properties": {"issues": {"type": "array"}}},
             ),
+            ToolSpec(
+                name="start_extraction_interview",
+                description="Start a multi-turn extraction interview from an initial question.",
+                input_schema=StartExtractionInterviewInput.model_json_schema(),
+                output_schema={"type": "object", "properties": {"interview_id": {"type": "string"}}},
+            ),
+            ToolSpec(
+                name="get_extraction_interview",
+                description="Load the current state of an extraction interview.",
+                input_schema=GetExtractionInterviewInput.model_json_schema(),
+                output_schema={"type": "object", "properties": {"interview_id": {"type": "string"}}},
+            ),
+            ToolSpec(
+                name="continue_extraction_interview",
+                description="Submit the next user answer to an extraction interview.",
+                input_schema=ContinueExtractionInterviewInput.model_json_schema(),
+                output_schema={"type": "object", "properties": {"interview_id": {"type": "string"}}},
+            ),
+            ToolSpec(
+                name="finish_extraction_interview",
+                description="Force-stop an extraction interview and stage final writeback previews.",
+                input_schema=FinishExtractionInterviewInput.model_json_schema(),
+                output_schema={"type": "object", "properties": {"interview_id": {"type": "string"}}},
+            ),
         ]
 
     def invoke(self, name: str, payload: dict) -> dict:
@@ -73,4 +103,19 @@ class ToolRegistry:
         if name == "run_lint":
             RunLintInput.model_validate(payload)
             return self.lint_service.run().model_dump(mode="json")
+        if name == "start_extraction_interview":
+            validated = StartExtractionInterviewInput.model_validate(payload)
+            return self.extraction_service.start(validated.question, scene_id=validated.scene_id).model_dump(mode="json")
+        if name == "get_extraction_interview":
+            validated = GetExtractionInterviewInput.model_validate(payload)
+            return self.extraction_service.get(validated.interview_id).model_dump(mode="json")
+        if name == "continue_extraction_interview":
+            validated = ContinueExtractionInterviewInput.model_validate(payload)
+            return self.extraction_service.continue_interview(
+                validated.interview_id,
+                validated.user_answer,
+            ).model_dump(mode="json")
+        if name == "finish_extraction_interview":
+            validated = FinishExtractionInterviewInput.model_validate(payload)
+            return self.extraction_service.finish(validated.interview_id).model_dump(mode="json")
         raise KeyError(f"Unknown tool: {name}")

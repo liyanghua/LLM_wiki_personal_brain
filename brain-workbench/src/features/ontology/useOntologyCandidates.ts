@@ -9,7 +9,15 @@ export function useOntologyCandidates() {
   const refs = storeToRefs(store);
 
   onMounted(async () => {
-    store.ontologyCandidates = await listOntologyCandidates();
+    store.loading = true;
+    store.error = "";
+    try {
+      store.ontologyCandidates = await listOntologyCandidates();
+    } catch (e: any) {
+      store.error = e?.message || "加载本体候选失败";
+    } finally {
+      store.loading = false;
+    }
   });
 
   return refs;

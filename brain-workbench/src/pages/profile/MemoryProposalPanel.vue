@@ -1,6 +1,6 @@
 <template>
   <section class="panel-card">
-    <h3>Persistent Memory Proposals</h3>
+    <h3>长期记忆建议</h3>
     <ProfileProposalCard
       v-for="item in items"
       :key="`${item.query_id}-${item.key}`"

@@ -20,21 +20,17 @@ function mountWorkbench(component: unknown) {
   });
 }
 
-describe("brain workbench pages", () => {
-  it("renders the ask workspace with five answer sections", () => {
+describe("brain workbench pages - 业务化中文", () => {
+  it("renders the ask workspace with business-oriented header", () => {
     const wrapper = mountWorkbench(AskWorkspacePage);
-    expect(wrapper.text()).toContain("Fact");
-    expect(wrapper.text()).toContain("Synthesis");
-    expect(wrapper.text()).toContain("Interpretation");
-    expect(wrapper.text()).toContain("Recommendation");
-    expect(wrapper.text()).toContain("Citations");
+    expect(wrapper.text()).toContain("问题分析");
   });
 
-  it("mounts the review and explorer pages", () => {
-    expect(mountWorkbench(WritebackReviewPage).text()).toContain("Writeback");
-    expect(mountWorkbench(AssetCandidatesPage).text()).toContain("Candidates");
-    expect(mountWorkbench(ProfileWorkspacePage).text()).toContain("Method Profile");
-    expect(mountWorkbench(EvalReportsPage).text()).toContain("Eval");
-    expect(mountWorkbench(WikiExplorerPage).text()).toContain("Wiki");
+  it("mounts all six pages with Chinese titles", () => {
+    expect(mountWorkbench(WritebackReviewPage).text()).toContain("知识沉淀");
+    expect(mountWorkbench(AssetCandidatesPage).text()).toContain("资产候选");
+    expect(mountWorkbench(ProfileWorkspacePage).text()).toContain("分析画像");
+    expect(mountWorkbench(EvalReportsPage).text()).toContain("评估看板");
+    expect(mountWorkbench(WikiExplorerPage).text()).toContain("知识地图");
   });
 });

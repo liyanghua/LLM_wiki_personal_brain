@@ -1,5 +1,5 @@
 <template>
-  <EvalTrendChart :title="'Method Consistency Trend'" :trend="trend" metric="method_consistency" />
+  <EvalTrendChart :title="'方法一致性趋势'" :trend="trend" metric="method_consistency" />
 </template>
 
 <script setup lang="ts">
