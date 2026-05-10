@@ -17,6 +17,7 @@ from personal_brain.extraction.service import ExtractionInterviewService
 from personal_brain.lint.service import WikiLintService
 from personal_brain.models import ToolSpec
 from personal_brain.retrieval.query_engine import QueryEngine
+from personal_brain.skills.strategy_runtime import StrategyRuntimeService
 from personal_brain.writeback.service import WritebackService
 
 
@@ -28,9 +29,10 @@ class ToolRegistry:
         self.writeback_service = WritebackService(config)
         self.lint_service = WikiLintService(config)
         self.extraction_service = ExtractionInterviewService(config)
+        self.strategy_runtime = StrategyRuntimeService(config)
 
     def list_specs(self) -> list[ToolSpec]:
-        return [
+        builtins = [
             ToolSpec(
                 name="search_wiki",
                 description="Search wiki pages relevant to a query.",
@@ -86,8 +88,32 @@ class ToolRegistry:
                 output_schema={"type": "object", "properties": {"interview_id": {"type": "string"}}},
             ),
         ]
+        approved_specs = [
+            ToolSpec(
+                name=f"approved_skill::{skill.skill_id}",
+                description=f"Run approved project skill: {skill.title}",
+                input_schema=skill.input_schema,
+                output_schema=skill.output_schema,
+            )
+            for skill in self.strategy_runtime.list_approved_skills()
+        ]
+        return builtins + approved_specs
 
     def invoke(self, name: str, payload: dict) -> dict:
+        if name.startswith("approved_skill::"):
+            skill_id = name.split("::", 1)[1]
+            approved = {item.skill_id: item for item in self.strategy_runtime.list_approved_skills()}
+            skill = approved.get(skill_id)
+            if not skill:
+                raise KeyError(f"Unknown approved skill: {skill_id}")
+            objective = str(payload.get("objective") or "").strip() or skill.title
+            grounding_sources = payload.get("grounding_sources") or skill.wiki_refs or []
+            return {
+                "recommendation": objective,
+                "why_now": f"通过项目已批准技能 {skill.title} 触发，建议结合当前业务 Wiki 执行。",
+                "validation_plan": "请先在人审或策略工作台中验证输出，再决定是否进入修订闭环。",
+                "evidence_refs": grounding_sources,
+            }
         if name == "search_wiki":
             validated = SearchWikiInput.model_validate(payload)
             return {"results": self.query_engine.search_wiki(validated.query)}
