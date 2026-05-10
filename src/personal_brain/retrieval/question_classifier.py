@@ -21,6 +21,9 @@ class QuestionClassifier:
         if normalized.startswith("如何") or "怎么" in normalized or lowered.startswith("how"):
             cues.append("procedural-keyword")
             return QuestionClassification(question_type="procedural", confidence=0.88, cues=cues)
+        if "主干链路" in normalized or "阶段" in normalized or "步骤" in normalized:
+            cues.append("process-keyword")
+            return QuestionClassification(question_type="procedural", confidence=0.86, cues=cues)
 
         cues.append("fallback-synthesis")
         return QuestionClassification(question_type="open-ended-synthesis", confidence=0.6, cues=cues)

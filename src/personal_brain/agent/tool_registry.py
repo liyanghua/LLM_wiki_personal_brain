@@ -37,7 +37,15 @@ class ToolRegistry:
                 name="search_wiki",
                 description="Search wiki pages relevant to a query.",
                 input_schema=SearchWikiInput.model_json_schema(),
-                output_schema={"type": "object", "properties": {"results": {"type": "array"}}},
+                output_schema={
+                    "type": "object",
+                    "properties": {
+                        "backend": {"type": "string"},
+                        "mode": {"type": "string"},
+                        "collection": {"type": "string"},
+                        "results": {"type": "array"},
+                    },
+                },
             ),
             ToolSpec(
                 name="read_page",
@@ -116,7 +124,7 @@ class ToolRegistry:
             }
         if name == "search_wiki":
             validated = SearchWikiInput.model_validate(payload)
-            return {"results": self.query_engine.search_wiki(validated.query)}
+            return self.query_engine.search_wiki(validated.query)
         if name == "read_page":
             validated = ReadPageInput.model_validate(payload)
             return {"page": self.query_engine.read_page(validated.page_id)}

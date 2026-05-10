@@ -11,9 +11,15 @@ MARKDOWN_LINK_PATTERN = re.compile(r"!?\[([^\]]+)\]\([^)]+\)")
 
 
 def extract_title(text: str, path: Path) -> str:
+    in_frontmatter = False
     for line in text.splitlines():
         stripped = line.strip()
         if not stripped:
+            continue
+        if stripped == "---":
+            in_frontmatter = not in_frontmatter
+            continue
+        if in_frontmatter:
             continue
         match = HEADING_PATTERN.match(stripped)
         if match:

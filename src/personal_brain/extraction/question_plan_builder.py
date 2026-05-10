@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from personal_brain.config import BrainConfig
+from personal_brain.llm.compile_service import LiteLLMCompileService
 from personal_brain.models import CompiledProblem, QuestionPlan
 
 
@@ -31,7 +33,26 @@ SLOT_QUESTION_TEMPLATES = {
 
 
 class QuestionPlanBuilder:
+    def __init__(self, config: BrainConfig | None = None) -> None:
+        self.config = config or BrainConfig()
+        self.compile_service = LiteLLMCompileService(self.config)
+
     def build(self, problem: CompiledProblem) -> QuestionPlan:
+        if self.config.compile_backend == "litellm":
+            try:
+                llm_plan = self.compile_service.build_followup_plan(problem)
+                if llm_plan.get("candidate_questions"):
+                    return QuestionPlan(
+                        next_question_type=str(llm_plan.get("next_question_type") or "slot-fill"),
+                        candidate_questions=list(llm_plan.get("candidate_questions") or []),
+                        target_missing_slots=list(llm_plan.get("target_missing_slots") or problem.missing_slots[:2]),
+                        stop_if=[
+                            "all target missing slots are filled",
+                            "the user says the interview has enough context",
+                        ],
+                    )
+            except Exception:
+                pass
         target_missing_slots = problem.missing_slots[:2]
         candidate_questions = [
             self._question_for_slot(slot, problem.current_object, problem.current_knowledge_goal)

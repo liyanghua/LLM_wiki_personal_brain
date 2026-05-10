@@ -11,6 +11,7 @@ from personal_brain.config import BrainConfig
 from personal_brain.eval.runner import EvaluationRunner
 from personal_brain.retrieval.query_engine import QueryEngine
 from personal_brain.writeback.service import WritebackService
+import os
 
 
 def test_api_routes_expose_ask_profile_and_wiki_data(built_brain_workspace) -> None:
@@ -79,3 +80,24 @@ def test_api_routes_expose_writeback_assets_eval_and_memory_data(built_brain_wor
     assert report_detail["run_id"] == reports["reports"][0]["run_id"]
     assert wiki_tree["tree"]
     assert wiki_page["page"]["title"]
+
+
+def test_extraction_start_works_when_brain_root_env_is_relative(monkeypatch, built_brain_workspace) -> None:
+    monkeypatch.chdir(built_brain_workspace)
+    monkeypatch.setenv("BRAIN_ROOT", ".")
+    monkeypatch.delenv("BRAIN_SOURCE_ROOT", raising=False)
+    monkeypatch.delenv("BRAIN_WORKSPACE_ROOT", raising=False)
+
+    config = BrainConfig.from_env()
+    status, payload = handle_request(
+        "POST",
+        "/api/extraction/interviews",
+        {"topic": "6大维度首先看哪个维度", "goal": "给出直接答案"},
+        config=config,
+    )
+
+    assert status == 200
+    assert payload["interview_id"]
+    assert payload["autosave_state"]["saved"] is True
+    assert payload["state_path"].startswith("memory/session/extraction/")
+    assert (built_brain_workspace / payload["state_path"]).exists()

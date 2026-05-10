@@ -11,7 +11,20 @@ export interface ApiClientOptions {
 async function parseResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const text = await response.text().catch(() => "");
-    throw new ApiError(response.status, text || `请求失败: ${response.status}`);
+    let message = text || `请求失败: ${response.status}`;
+
+    if (text) {
+      try {
+        const payload = JSON.parse(text) as { error?: string };
+        if (typeof payload.error === "string" && payload.error) {
+          message = payload.error;
+        }
+      } catch {
+        // keep the raw text when the response is not json
+      }
+    }
+
+    throw new ApiError(response.status, message);
   }
   return (await response.json()) as T;
 }

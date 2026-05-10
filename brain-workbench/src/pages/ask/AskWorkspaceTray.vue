@@ -5,6 +5,15 @@
         <h3>证据片段</h3>
         <EvidenceList :evidence="evidence" />
       </section>
+      <section class="panel-card" v-if="quickGroundingBlocks.length > 0">
+        <h3>答案依据</h3>
+        <div class="stack">
+          <article v-for="item in quickGroundingBlocks" :key="`${item.label}-${item.text}`" class="list-card">
+            <strong>{{ item.label }}</strong>
+            <p>{{ item.text }}</p>
+          </article>
+        </div>
+      </section>
       <section class="panel-card">
         <h3>沉淀预览</h3>
         <MergePreviewPanel
@@ -15,6 +24,26 @@
       </section>
     </template>
     <template v-else>
+      <section class="panel-card">
+        <h3>待追问问题池</h3>
+        <div class="stack">
+          <div v-if="extractionFollowups.length === 0" class="empty-state">暂无待追问问题</div>
+          <article
+            v-for="item in extractionFollowups"
+            :key="item.question_id"
+            class="list-card"
+          >
+            <div class="action-row">
+              <strong>{{ item.question_text }}</strong>
+              <span class="chip">{{ item.priority }}</span>
+              <span class="chip">{{ item.status }}</span>
+            </div>
+            <p>{{ item.reason }}</p>
+            <p v-if="item.linked_stage" class="question-meta">linked stage: {{ item.linked_stage }}</p>
+            <p v-if="item.linked_step" class="question-meta">linked step: {{ item.linked_step }}</p>
+          </article>
+        </div>
+      </section>
       <section class="panel-card">
         <h3>检索证据桶</h3>
         <EvidenceList :evidence="extractionEvidence" />
@@ -48,7 +77,11 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import type { EvidenceSnippet } from "@/entities/answer-record/types";
-import type { ExtractionInterviewStateEntity, StagedWritebackEntity } from "@/entities/extraction-interview/types";
+import type {
+  ExtractionInterviewStateEntity,
+  FollowupQuestionEntity,
+  StagedWritebackEntity,
+} from "@/entities/extraction-interview/types";
 import EvidenceList from "@/widgets/evidence/EvidenceList.vue";
 import MergePreviewPanel from "@/widgets/proposal/MergePreviewPanel.vue";
 
@@ -58,8 +91,13 @@ const props = defineProps<{
   proposalTarget: string;
   contentPreview: string;
   proposalEvidence: string[];
+  quickGroundingBlocks?: Array<{
+    label: string;
+    text: string;
+  }>;
   retrievalBuckets?: ExtractionInterviewStateEntity["retrieval_buckets"] | null;
   stagedWriteback?: StagedWritebackEntity | null;
+  followupQuestions?: FollowupQuestionEntity[] | null;
 }>();
 
 function normalizeLayerPreviews(layer: Record<string, unknown> | null | undefined, fallbackTarget: string) {
@@ -106,4 +144,13 @@ const knowledgePreviews = computed(() =>
 const assetPreviews = computed(() =>
   normalizeLayerPreviews(props.stagedWriteback?.asset_level, "asset-level"),
 );
+const extractionFollowups = computed(() => props.followupQuestions ?? []);
+const quickGroundingBlocks = computed(() => props.quickGroundingBlocks ?? []);
 </script>
+
+<style scoped>
+.question-meta {
+  margin: 0;
+  color: var(--wb-text-muted);
+}
+</style>

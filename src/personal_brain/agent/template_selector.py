@@ -3,7 +3,7 @@ from __future__ import annotations
 from personal_brain.models import MethodProfile, TemplatePlan
 
 
-CORE_SECTIONS = ["fact", "synthesis", "interpretation", "recommendation"]
+CORE_SECTIONS = ["direct_answer", "fact", "synthesis", "interpretation", "recommendation"]
 
 
 class TemplateSelector:

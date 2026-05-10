@@ -38,4 +38,19 @@ describe("api client live-only", () => {
 
     await expect(client.get("/api/missing")).rejects.toThrow(ApiError);
   });
+
+  it("prefers backend error messages from json payloads", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 400,
+      text: () => Promise.resolve(JSON.stringify({ error: "user_answer is required" })),
+    });
+
+    const client = createApiClient({
+      apiBaseUrl: "http://localhost:8000",
+      fetchImpl: mockFetch as unknown as typeof fetch,
+    });
+
+    await expect(client.post("/api/extraction/interviews/x/turns", {})).rejects.toThrow("user_answer is required");
+  });
 });

@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Expert Brain Studio × Ontology Brain × Skills 总体架构图</title>
+  <style>
+    :root{
+      --bg:#07111f; --text:#eaf1ff; --muted:#a9b8d7;
+      --blue:#79c7ff; --indigo:#a6b0ff; --green:#86f2c2; --amber:#ffd47d;
+      --rose:#ff9fba; --violet:#c9a7ff; --cyan:#76e9ff; --fuchsia:#ff9cff;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0; color:var(--text);
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;
+      background:radial-gradient(circle at top,#12213d 0%,#07111f 42%,#040912 100%);
+    }
+    .wrap{padding:20px;overflow:auto}
+    .board{
+      width:1820px; margin:0 auto; padding:22px;
+      border-radius:28px; border:1px solid rgba(255,255,255,.08);
+      background:linear-gradient(180deg,rgba(255,255,255,.02),rgba(255,255,255,.01));
+      box-shadow:0 30px 80px rgba(0,0,0,.38);
+    }
+    .title h1{margin:0;font-size:34px;line-height:1.15}
+    .sub{margin-top:10px;color:var(--muted);font-size:14px;line-height:1.7;max-width:1320px}
+    .pills{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+    .pill{
+      padding:7px 12px;border-radius:999px;font-size:12px;color:#dce8ff;
+      border:1px solid rgba(255,255,255,.11); background:rgba(255,255,255,.04);
+    }
+    svg text{font-family:inherit}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="board">
+    <div class="title">
+      <h1>Expert Brain Studio × Ontology Brain × Industrial Skills 总体架构图</h1>
+      <div class="sub">
+        目标：把业务专家初步整理的 raw sources，通过目录级 / 文件级 schema 与电商领域知识注入，编译为 persistent wiki、process spine、决策本体与工业级 skills，
+        最终支撑交互式问答、共编、标注、冲突裁决与场景 Agent 持续生产和进化。
+      </div>
+      <div class="pills">
+        <div class="pill">Raw → Schema → Compile → Wiki → Ontology → Skills → Agent Runtime</div>
+        <div class="pill">主干链路SOP = Process Spine / 导航骨架</div>
+        <div class="pill">目录级 schema + 文件级 descriptor + domain profiles</div>
+        <div class="pill">知识沉淀 = Wiki；资产沉淀 = Ontology；执行沉淀 = Skills</div>
+      </div>
+    </div>
+
+    <svg viewBox="0 0 1780 1580" width="100%" height="auto">
+      <defs>
+        <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+          <path d="M0,0 L10,5 L0,10 z" fill="#9cb2e0"></path>
+        </marker>
+        <marker id="arrowA" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+          <path d="M0,0 L10,5 L0,10 z" fill="#ffd47d"></path>
+        </marker>
+        <marker id="arrowP" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+          <path d="M0,0 L10,5 L0,10 z" fill="#ff9cff"></path>
+        </marker>
+      </defs>
+
+      <rect x="20" y="20" width="1740" height="66" rx="18" fill="rgba(255,255,255,.03)" stroke="rgba(255,255,255,.08)"/>
+      <text x="42" y="47" fill="#eaf1ff" font-size="19" font-weight="800">核心原则：专家提供原始经验与判断，系统先做结构化编译，再做知识沉淀、本体沉淀与 skill 化；不是“直接聊天得到答案”，而是“持续生产可治理资产”。</text>
+      <text x="42" y="71" fill="#b7c7e8" font-size="13">架构分为八层：Raw Sources → Schema & Domain Injection → Normalize / Graphify → Wiki Compile → Process Spine → Ontology Brain → Skill Factory → Agent Runtime / Feedback。</text>
+
+      <text x="20" y="120" fill="#eaf1ff" font-size="28" font-weight="800">一、核心链路（从 raw 到工业级 skills）</text>
+      <text x="20" y="145" fill="#a9b8d7" font-size="13">左到右是主生产链；下方是过程骨架、索引检索与治理闭环。</text>
+
+      <rect x="20" y="170" width="280" height="240" rx="24" fill="#11233b" stroke="#3f6f9f"/>
+      <text x="42" y="202" fill="#79c7ff" font-size="16" font-weight="700">Layer 1 / Raw Sources</text>
+      <text x="42" y="230" fill="#ffffff" font-size="24" font-weight="800">业务专家初步整理的 raw</text>
+      <text x="42" y="258" fill="#d7e8ff" font-size="13">来源：industry_docs / conversations / attachments / data / notes / links</text>
+      <text x="42" y="291" fill="#b8caec" font-size="13">• 行业规则文档</text>
+      <text x="42" y="315" fill="#b8caec" font-size="13">• 访谈日志 / 递进式问答中间稿</text>
+      <text x="42" y="339" fill="#b8caec" font-size="13">• xmind / drawio / docx / xlsx / png</text>
+      <text x="42" y="363" fill="#b8caec" font-size="13">• 原始数据与链接</text>
+      <text x="42" y="392" fill="#9fb6df" font-size="12">原则：Raw 只读，永不直接覆盖。</text>
+
+      <rect x="330" y="170" width="320" height="240" rx="24" fill="#171d41" stroke="#5c67ba"/>
+      <text x="352" y="202" fill="#a6b0ff" font-size="16" font-weight="700">Layer 2 / Schema & Domain Injection</text>
+      <text x="352" y="230" fill="#ffffff" font-size="24" font-weight="800">目录级 schema + 文件级 descriptor</text>
+      <text x="352" y="258" fill="#e0e4ff" font-size="13">决定默认抽取策略、风险控制、编译路由与输出目标</text>
+      <text x="352" y="291" fill="#c7ceff" font-size="13">• _dir_schema.yaml</text>
+      <text x="352" y="315" fill="#c7ceff" font-size="13">• source_records.jsonl</text>
+      <text x="352" y="339" fill="#c7ceff" font-size="13">• domain_profiles（电商术语 / 主图CTR本体 / 问题分类）</text>
+      <text x="352" y="363" fill="#c7ceff" font-size="13">• compiler_routes.yaml</text>
+      <text x="352" y="392" fill="#b5c0ff" font-size="12">让 compiler 知道：该抽什么、不该抽什么、先挂到哪里。</text>
+
+      <rect x="680" y="170" width="320" height="240" rx="24" fill="#112c2a" stroke="#43997f"/>
+      <text x="702" y="202" fill="#86f2c2" font-size="16" font-weight="700">Layer 3 / Normalize & Graphify</text>
+      <text x="702" y="230" fill="#ffffff" font-size="24" font-weight="800">结构化预编译层</text>
+      <text x="702" y="258" fill="#dcfff0" font-size="13">先把 raw 变成稳定的中间表示，而不是直接写 wiki</text>
+      <text x="702" y="291" fill="#c5f4e3" font-size="13">• docx → markdown</text>
+      <text x="702" y="315" fill="#c5f4e3" font-size="13">• xlsx → table schema / metrics</text>
+      <text x="702" y="339" fill="#c5f4e3" font-size="13">• xmind / drawio → graph_json / outline</text>
+      <text x="702" y="363" fill="#c5f4e3" font-size="13">• Graphify：node / edge / cluster / extracted|inferred|ambiguous</text>
+      <text x="702" y="392" fill="#9adcc8" font-size="12">中间产物：normalized markdown、graph.json、node/edge registry、claim bank。</text>
+
+      <rect x="1030" y="170" width="320" height="240" rx="24" fill="#312613" stroke="#bb954b"/>
+      <text x="1052" y="202" fill="#ffd47d" font-size="16" font-weight="700">Layer 4 / Wiki Compile</text>
+      <text x="1052" y="230" fill="#ffffff" font-size="24" font-weight="800">Persistent Wiki 知识沉淀</text>
+      <text x="1052" y="258" fill="#fff1ce" font-size="13">从 graph + evidence 写 wiki，而不是每次从 raw 重建答案</text>
+      <text x="1052" y="291" fill="#f4dfab" font-size="13">• Concept Pages</text>
+      <text x="1052" y="315" fill="#f4dfab" font-size="13">• Rule / Heuristic Pages</text>
+      <text x="1052" y="339" fill="#f4dfab" font-size="13">• Case Pages</text>
+      <text x="1052" y="363" fill="#f4dfab" font-size="13">• Topic / Cluster / Comparison Pages</text>
+      <text x="1052" y="392" fill="#d9b66a" font-size="12">配套：index.md、log.md、lint、health check、retrieval metadata。</text>
+
+      <rect x="1380" y="170" width="380" height="240" rx="24" fill="#2b1432" stroke="#bf6abf"/>
+      <text x="1402" y="202" fill="#ff9cff" font-size="16" font-weight="700">Layer 5 / Ontology Brain</text>
+      <text x="1402" y="230" fill="#ffffff" font-size="24" font-weight="800">本体沉淀（核心电商决策本体）</text>
+      <text x="1402" y="258" fill="#ffe4ff" font-size="13">将 wiki / graph / expert feedback 编译为正式的领域对象、状态对象与决策对象</text>
+      <text x="1402" y="291" fill="#f7cfff" font-size="13">• 概念本体：人-货-场-图-卖点-人群-平台-指标</text>
+      <text x="1402" y="315" fill="#f7cfff" font-size="13">• 决策本体：stage / step / decision / rule / exception</text>
+      <text x="1402" y="339" fill="#f7cfff" font-size="13">• 证据本体：claim / evidence / provenance / confidence</text>
+      <text x="1402" y="363" fill="#f7cfff" font-size="13">• 执行本体：artifact / metric / action / validation window</text>
+      <text x="1402" y="392" fill="#d8a5d8" font-size="12">输出：StrategySpec、DecisionCard、CaseCard、SkillContract 候选。</text>
+
+      <line x1="300" y1="290" x2="330" y2="290" stroke="#9cb2e0" stroke-width="3" marker-end="url(#arrow)"/>
+      <line x1="650" y1="290" x2="680" y2="290" stroke="#9cb2e0" stroke-width="3" marker-end="url(#arrow)"/>
+      <line x1="1000" y1="290" x2="1030" y2="290" stroke="#9cb2e0" stroke-width="3" marker-end="url(#arrow)"/>
+      <line x1="1350" y1="290" x2="1380" y2="290" stroke="#9cb2e0" stroke-width="3" marker-end="url(#arrow)"/>
+
+      <text x="20" y="470" fill="#eaf1ff" font-size="28" font-weight="800">二、主干导航骨架 + 索引/召回策略</text>
+      <text x="20" y="495" fill="#a9b8d7" font-size="13">主干链路SOP 不是普通文档，而是 process spine；所有知识优先尝试挂到 stage / step，再更新 wiki / ontology / skills。</text>
+
+      <rect x="20" y="520" width="500" height="240" rx="24" fill="#13293a" stroke="#4b9db5"/>
+      <text x="42" y="552" fill="#76e9ff" font-size="16" font-weight="700">Process Spine Asset</text>
+      <text x="42" y="580" fill="#ffffff" font-size="24" font-weight="800">主干链路SOP（主导航骨架）</text>
+      <text x="42" y="608" fill="#ddfbff" font-size="13">canonical_format: graph_json ｜ object_type: ProcessFlow</text>
+      <text x="42" y="640" fill="#d0f8ff" font-size="13">Stages：</text>
+      <text x="68" y="664" fill="#d0f8ff" font-size="13">• 洞察分析</text>
+      <text x="68" y="688" fill="#d0f8ff" font-size="13">• 立项与竞品</text>
+      <text x="68" y="712" fill="#d0f8ff" font-size="13">• 产品开发 / 产品营销能力塑造</text>
+      <text x="68" y="736" fill="#d0f8ff" font-size="13">• 上架与孵化 / 打爆与放大 / 复盘沉淀</text>
+
+      <rect x="550" y="520" width="520" height="240" rx="24" fill="#151c40" stroke="#636fc7"/>
+      <text x="572" y="552" fill="#a6b0ff" font-size="16" font-weight="700">Process-Aware Compile Strategy</text>
+      <text x="572" y="580" fill="#ffffff" font-size="24" font-weight="800">新文档先挂到 Stage / Step，再写 Wiki</text>
+      <text x="572" y="608" fill="#e3e7ff" font-size="13">1. classify stage / step</text>
+      <text x="572" y="632" fill="#e3e7ff" font-size="13">2. attach source / rule / case / signal to process node</text>
+      <text x="572" y="656" fill="#e3e7ff" font-size="13">3. update canonical graph_json</text>
+      <text x="572" y="680" fill="#e3e7ff" font-size="13">4. regenerate affected pages（overview / stage / step / process index）</text>
+      <text x="572" y="704" fill="#e3e7ff" font-size="13">5. update retrieval metadata & ontology projection</text>
+      <text x="572" y="732" fill="#b8c2ff" font-size="12">核心：从“文档中心”升级为“主干链路中心”。</text>
+
+      <rect x="1100" y="520" width="660" height="240" rx="24" fill="#102b29" stroke="#43997f"/>
+      <text x="1122" y="552" fill="#86f2c2" font-size="16" font-weight="700">Retrieval / Index Strategy</text>
+      <text x="1122" y="580" fill="#ffffff" font-size="24" font-weight="800">按任务调用不同表示，而不是只搜 markdown</text>
+      <text x="1122" y="608" fill="#dcfff0" font-size="13">• 导航：xmind / process overview page</text>
+      <text x="1122" y="632" fill="#dcfff0" font-size="13">• 问答：stage page → step page → linked rules / cases → raw evidence</text>
+      <text x="1122" y="656" fill="#dcfff0" font-size="13">• 挂载：graph_json + meta_yaml 优先</text>
+      <text x="1122" y="680" fill="#dcfff0" font-size="13">• 本体投影：graph_json + claim bank + node/edge registry</text>
+      <text x="1122" y="704" fill="#dcfff0" font-size="13">• 目录级检索：index.md + process_sop_index + retrieval keywords + source coverage</text>
+      <text x="1122" y="732" fill="#9adcc8" font-size="12">召回主路径：query → classify relevant stage/step → retrieve linked assets → optional raw drill-down。</text>
+
+      <line x1="520" y1="640" x2="550" y2="640" stroke="#9cb2e0" stroke-width="3" marker-end="url(#arrow)"/>
+      <line x1="1070" y1="640" x2="1100" y2="640" stroke="#9cb2e0" stroke-width="3" marker-end="url(#arrow)"/>
+
+      <text x="20" y="830" fill="#eaf1ff" font-size="28" font-weight="800">三、Expert Brain Studio：行业专家 × Agent 交互与知识生产线</text>
+      <text x="20" y="855" fill="#a9b8d7" font-size="13">前台不是普通聊天，而是围绕主干链路与 wiki / ontology 持续生产工业级 skills 的协作界面。</text>
+
+      <rect x="20" y="880" width="230" height="310" rx="24" fill="#10233b" stroke="#3f6f9f"/>
+      <text x="42" y="912" fill="#79c7ff" font-size="16" font-weight="700">Human Expert</text>
+      <text x="42" y="940" fill="#ffffff" font-size="23" font-weight="800">行业专家</text>
+      <text x="42" y="970" fill="#d7e8ff" font-size="13">输入：</text>
+      <text x="58" y="994" fill="#d7e8ff" font-size="13">• 原始规则 / SOP / 脑图</text>
+      <text x="58" y="1018" fill="#d7e8ff" font-size="13">• 访谈回答</text>
+      <text x="58" y="1042" fill="#d7e8ff" font-size="13">• 案例 / 反例</text>
+      <text x="58" y="1066" fill="#d7e8ff" font-size="13">• 边界 / 例外 / 失败教训</text>
+      <text x="42" y="1100" fill="#b7cbe9" font-size="13">职责：</text>
+      <text x="58" y="1124" fill="#b7cbe9" font-size="13">• 提供 tacit knowledge</text>
+      <text x="58" y="1148" fill="#b7cbe9" font-size="13">• 审核关键资产</text>
+
+      <rect x="290" y="880" width="270" height="130" rx="22" fill="#171d41" stroke="#5c67ba"/>
+      <text x="312" y="912" fill="#a6b0ff" font-size="16" font-weight="700">A1 交互式问答 Agent</text>
+      <text x="312" y="940" fill="#ffffff" font-size="21" font-weight="800">递进式榨取 tacit knowledge</text>
+      <text x="312" y="968" fill="#e2e5ff" font-size="13">定义 / 判断 / 条件 / 反例 / 例外 / 证据</text>
+      <text x="312" y="992" fill="#b9c2ff" font-size="12">输出：candidate concepts / heuristics / boundaries / pending questions</text>
+
+      <rect x="590" y="880" width="270" height="130" rx="22" fill="#112c2a" stroke="#43997f"/>
+      <text x="612" y="912" fill="#86f2c2" font-size="16" font-weight="700">A2 共编 Copilot Agent</text>
+      <text x="612" y="940" fill="#ffffff" font-size="21" font-weight="800">Wiki + Node + Graph 共编</text>
+      <text x="612" y="968" fill="#dcfff0" font-size="13">把候选知识整理成 pages / nodes / edges / draft cards</text>
+      <text x="612" y="992" fill="#9adcc8" font-size="12">输出：Brain Pages、Knowledge Nodes、Draft Cards</text>
+
+      <rect x="890" y="880" width="270" height="130" rx="22" fill="#312613" stroke="#bb954b"/>
+      <text x="912" y="912" fill="#ffd47d" font-size="16" font-weight="700">A3 标注 Agent</text>
+      <text x="912" y="940" fill="#ffffff" font-size="21" font-weight="800">结构化标注与复核</text>
+      <text x="912" y="968" fill="#fff1ce" font-size="13">对象 / 关系 / 决策 / 证据 / 质量 / 范围 标注</text>
+      <text x="912" y="992" fill="#d9b66a" font-size="12">输出：Labeled Assets、Review Tasks</text>
+
+      <rect x="1190" y="880" width="270" height="130" rx="22" fill="#321621" stroke="#b86484"/>
+      <text x="1212" y="912" fill="#ff9fba" font-size="16" font-weight="700">A4 冲突裁决 Agent Council</text>
+      <text x="1212" y="940" fill="#ffffff" font-size="21" font-weight="800">多专家视角形成共识</text>
+      <text x="1212" y="968" fill="#ffdce5" font-size="13">定义冲突 / 规则冲突 / 范围冲突 / 少数意见保留</text>
+      <text x="1212" y="992" fill="#d8a4b7" font-size="12">输出：Consensus、Minority Opinion、Escalation Tasks</text>
+
+      <rect x="1490" y="880" width="270" height="130" rx="22" fill="#25163c" stroke="#8d6cc9"/>
+      <text x="1512" y="912" fill="#c9a7ff" font-size="16" font-weight="700">A5 Skill Creator + 自进化</text>
+      <text x="1512" y="940" fill="#ffffff" font-size="21" font-weight="800">工业级 Skill 生产</text>
+      <text x="1512" y="968" fill="#efe2ff" font-size="13">SkillSpec / PromptPack / ReasoningTemplate / ValidationPolicy</text>
+      <text x="1512" y="992" fill="#c9a7ff" font-size="12">输出：Published Skills、Improvement Tasks</text>
+
+      <rect x="290" y="1040" width="1470" height="150" rx="24" fill="#2a1432" stroke="#bf6abf"/>
+      <text x="320" y="1074" fill="#ff9cff" font-size="18" font-weight="800">Governance Center（横向治理中枢）</text>
+      <text x="320" y="1102" fill="#ffe4ff" font-size="14">术语治理、版本管理、审核发布、证据追踪、评测回流、审计记录、source-to-claim 可追溯。</text>
+      <text x="320" y="1136" fill="#f6d6ff" font-size="13">• Semantic Dictionary  • Version History  • Approval Workflow  • Provenance Store  • Eval & Audit  • Feedback Loop</text>
+      <text x="320" y="1166" fill="#d9a9d9" font-size="12">没有治理，这套系统只是“AI 知识库”；有治理，它才是“企业可放行的生产资料系统”。</text>
+
+      <line x1="250" y1="945" x2="290" y2="945" stroke="#9cb2e0" stroke-width="3" marker-end="url(#arrow)"/>
+      <line x1="560" y1="945" x2="590" y2="945" stroke="#9cb2e0" stroke-width="3" marker-end="url(#arrow)"/>
+      <line x1="860" y1="945" x2="890" y2="945" stroke="#9cb2e0" stroke-width="3" marker-end="url(#arrow)"/>
+      <line x1="1160" y1="945" x2="1190" y2="945" stroke="#9cb2e0" stroke-width="3" marker-end="url(#arrow)"/>
+      <line x1="1460" y1="945" x2="1490" y2="945" stroke="#ffd47d" stroke-width="3" marker-end="url(#arrowA)"/>
+
+      <line x1="425" y1="1010" x2="425" y2="1040" stroke="#ff9cff" stroke-width="3" marker-end="url(#arrowP)"/>
+      <line x1="725" y1="1010" x2="725" y2="1040" stroke="#ff9cff" stroke-width="3" marker-end="url(#arrowP)"/>
+      <line x1="1025" y1="1010" x2="1025" y2="1040" stroke="#ff9cff" stroke-width="3" marker-end="url(#arrowP)"/>
+      <line x1="1325" y1="1010" x2="1325" y2="1040" stroke="#ff9cff" stroke-width="3" marker-end="url(#arrowP)"/>
+      <line x1="1625" y1="1010" x2="1625" y2="1040" stroke="#ff9cff" stroke-width="3" marker-end="url(#arrowP)"/>
+
+      <text x="20" y="1260" fill="#eaf1ff" font-size="28" font-weight="800">四、工业级 Skills 与下游运行时</text>
+      <text x="20" y="1285" fill="#a9b8d7" font-size="13">最终产出的不是一堆页面，而是可验证、可调用、可进化的工业级 skills。</text>
+
+      <rect x="20" y="1310" width="560" height="210" rx="24" fill="#312613" stroke="#bb954b"/>
+      <text x="42" y="1342" fill="#ffd47d" font-size="16" font-weight="700">Industrial Skill Factory</text>
+      <text x="42" y="1370" fill="#ffffff" font-size="24" font-weight="800">Skills 的工业级定义</text>
+      <text x="42" y="1398" fill="#fff1ce" font-size="13">一个 skill 不是 prompt，而是：知识依赖 + 输入输出契约 + 推理模板 + 校验策略 + 版本 + 回归评测</text>
+      <text x="42" y="1430" fill="#f4dfab" font-size="13">• SkillSpec</text>
+      <text x="42" y="1454" fill="#f4dfab" font-size="13">• PromptPack / ReasoningTemplate</text>
+      <text x="42" y="1478" fill="#f4dfab" font-size="13">• ValidationPolicy / EvalCases</text>
+      <text x="42" y="1502" fill="#d9b66a" font-size="12">核心：同一知识资产可以沉淀为多场景 skill，而不是困在 wiki 页里。</text>
+
+      <rect x="610" y="1310" width="560" height="210" rx="24" fill="#122937" stroke="#4aa0b8"/>
+      <text x="632" y="1342" fill="#76e9ff" font-size="16" font-weight="700">Agent Runtime / Consumer</text>
+      <text x="632" y="1370" fill="#ffffff" font-size="24" font-weight="800">下游场景 Agent 与业务工作台</text>
+      <text x="632" y="1398" fill="#ddfbff" font-size="13">• 商品诊断 Agent</text>
+      <text x="632" y="1422" fill="#ddfbff" font-size="13">• 内容策划 Agent</text>
+      <text x="632" y="1446" fill="#ddfbff" font-size="13">• 广告优化 Agent</text>
+      <text x="632" y="1470" fill="#ddfbff" font-size="13">• 研究 / 洞察 Agent</text>
+      <text x="632" y="1494" fill="#b2eff7" font-size="12">消费方式：按任务 → 定位相关 stage/step → 调用相关 skill → 输出建议 + 证据 + 风险。</text>
+
+      <rect x="1200" y="1310" width="560" height="210" rx="24" fill="#112c2a" stroke="#43997f"/>
+      <text x="1222" y="1342" fill="#86f2c2" font-size="16" font-weight="700">Feedback Flywheel</text>
+      <text x="1222" y="1370" fill="#ffffff" font-size="24" font-weight="800">持续回流与自进化</text>
+      <text x="1222" y="1398" fill="#dcfff0" font-size="13">来源：</text>
+      <text x="1248" y="1422" fill="#dcfff0" font-size="13">• 专家纠错 / 共编修订</text>
+      <text x="1248" y="1446" fill="#dcfff0" font-size="13">• Agent 输出评分 / 采纳率 / 失败案例</text>
+      <text x="1248" y="1470" fill="#dcfff0" font-size="13">• Eval 失分项 / 冲突裁决结果 / 新文档增量</text>
+      <text x="1222" y="1498" fill="#9adcc8" font-size="12">回流到：schema、wiki pages、ontology objects、skills、主干链路证据块。</text>
+
+      <line x1="580" y1="1415" x2="610" y2="1415" stroke="#ffd47d" stroke-width="3" marker-end="url(#arrowA)"/>
+      <line x1="1170" y1="1415" x2="1200" y2="1415" stroke="#9cb2e0" stroke-width="3" marker-end="url(#arrow)"/>
+
+      <path d="M1480 1310 C1480 1240, 1640 1230, 1640 1190" stroke="#ff9cff" stroke-width="3" fill="none" marker-end="url(#arrowP)"/>
+      <path d="M1480 1310 C1480 840, 1600 820, 1600 410" stroke="#ffd47d" stroke-width="2.8" fill="none" stroke-dasharray="8 6" marker-end="url(#arrowA)"/>
+      <path d="M1380 1310 C1380 840, 900 820, 900 410" stroke="#9cb2e0" stroke-width="2.8" fill="none" stroke-dasharray="8 6" marker-end="url(#arrow)"/>
+
+      <rect x="20" y="1538" width="1740" height="24" rx="12" fill="rgba(255,255,255,.03)" stroke="rgba(255,255,255,.06)"/>
+      <text x="42" y="1555" fill="#c9d6f1" font-size="12">一句话：行业专家负责“把真实经验带进来”，Expert Brain Studio 负责“把知识采进来并整理好”，Ontology Brain 负责“把知识编译成决策资产”，Skill Factory 负责“把资产工业化为可执行能力”。</text>
+    </svg>
+  </div>
+</div>
+</body>
+</html>

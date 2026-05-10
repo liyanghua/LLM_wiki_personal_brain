@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from personal_brain.config import BrainConfig
 from personal_brain.models import AnswerRecord, SessionRecord, WritebackBundle
+from personal_brain.retrieval.search_provider import SearchIndexManager
 from personal_brain.utils.files import utc_now, write_json
 from personal_brain.writeback.merger import WritebackMerger
 from personal_brain.writeback.router import WritebackRouter, context_from_session_record
@@ -20,6 +21,7 @@ class WritebackService:
         bundle = self.router.route(context_from_session_record(session_record))
         if apply:
             bundle.applied_targets = self.merger.apply(bundle, session_record)
+            SearchIndexManager(self.config).refresh()
         proposal_path = self.paths.writeback_dir / f"{query_id}.json"
         write_json(proposal_path, bundle.model_dump(mode="json"))
         self._append_log(query_id, apply, bundle)

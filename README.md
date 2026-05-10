@@ -138,6 +138,46 @@ python -m apps.cli.main eval
 python -m apps.cli.main lint
 ```
 
+## LiteLLM Compile Backend
+
+The compile pipeline can run in deterministic mode or through a backend-owned LiteLLM integration.
+
+Environment variables:
+
+```bash
+export BRAIN_COMPILE_BACKEND=litellm
+export DASHSCOPE_API_KEY=...
+# Optional: explicit model. If omitted and DASHSCOPE_API_KEY is set, defaults to dashscope/qwen-max.
+export BRAIN_LITELLM_MODEL=dashscope/qwen-max
+```
+
+Optional settings:
+
+```bash
+export OPENROUTER_API_KEY=...
+export BRAIN_LITELLM_FALLBACK_MODELS=openrouter/<your-text-model>
+export BRAIN_LITELLM_PROVIDER_ORDER=dashscope,openrouter,openai
+export BRAIN_LITELLM_API_BASE=
+export BRAIN_LITELLM_TEMPERATURE=0.2
+export BRAIN_LITELLM_MAX_TOKENS=1200
+export BRAIN_LITELLM_TIMEOUT_SECONDS=45
+```
+
+Provider notes:
+
+- DashScope models use LiteLLM names such as `dashscope/qwen-max`.
+- OpenRouter models use LiteLLM names such as `openrouter/qwen/qwen3-235b-a22b-2507`.
+- `OPENROUTER_IMAGE_MODEL` is intentionally not used for text compile because it may point at an image model.
+- `.env` is loaded by `BrainConfig.from_env()` without overwriting already exported variables.
+
+Dependency shape:
+
+- installed package via `pyproject.toml`
+- optional vendored mirror under [external/litellm/README.md](/Users/yichen/Desktop/OntologyBrain/LLM-wiki/external/litellm/README.md)
+- on Python 3.14+, the published LiteLLM package currently declares `<3.14`, so this repo uses the vendored mirror plus LiteLLM runtime dependencies instead of installing the package itself
+
+LiteLLM is backend infrastructure for compile/question-planning hooks only. Hermes-facing contracts stay unchanged.
+
 ## End-to-End Demo
 
 ```bash

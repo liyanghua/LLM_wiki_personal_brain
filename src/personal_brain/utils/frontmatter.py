@@ -6,6 +6,8 @@ from typing import Any
 def render_frontmatter(metadata: dict[str, Any]) -> str:
     lines = ["---"]
     for key, value in metadata.items():
+        if value is None or value == "":
+            continue
         if isinstance(value, list):
             lines.append(f"{key}:")
             for item in value:
