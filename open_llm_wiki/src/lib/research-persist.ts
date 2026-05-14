@@ -40,11 +40,15 @@ export async function saveResearchSession(
     sessionPath: `${dir}/session.json`,
     sourcesPath: `${dir}/sources.json`,
     notesPath: `${dir}/notes.md`,
+    opportunityCardsPath: `${dir}/opportunity-cards.json`,
   }
 
   await writeFile(updated.sessionPath!, JSON.stringify(updated, null, 2))
   await writeFile(updated.sourcesPath!, JSON.stringify(updated.sources, null, 2))
   await writeFile(updated.notesPath!, updated.notesMarkdown || "")
+  if (Array.isArray(updated.opportunityCards) && updated.opportunityCards.length > 0) {
+    await writeFile(updated.opportunityCardsPath!, JSON.stringify(updated.opportunityCards, null, 2))
+  }
   if (updated.reportMarkdown.trim()) {
     await writeFile(updated.reportPath!, updated.reportMarkdown)
   }

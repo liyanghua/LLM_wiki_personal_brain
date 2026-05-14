@@ -13,8 +13,8 @@ import { Button } from "@/components/ui/button"
 import { useWikiStore } from "@/stores/wiki-store"
 import { useAgentModeStore } from "@/stores/agent-mode-store"
 import { useAgentLoopStore } from "@/stores/agent-loop-store"
-import { useChatStore, type DisplayMessage, type SupplementInsight } from "@/stores/chat-store"
-import { readFile, writeFile, listDirectory } from "@/commands/fs"
+import { useChatStore, type ChatImageEvidence, type DisplayMessage, type SupplementInsight } from "@/stores/chat-store"
+import { readFile, readFileAsBase64, writeFile, listDirectory } from "@/commands/fs"
 import { lastQueryPages } from "@/components/chat/chat-panel"
 import type { FileNode } from "@/types/wiki"
 
@@ -22,8 +22,10 @@ import { convertLatexToUnicode } from "@/lib/latex-to-unicode"
 import { normalizePath, getFileName } from "@/lib/path-utils"
 import { makeQueryFileName } from "@/lib/wiki-filename"
 import { hasUsableLlm } from "@/lib/has-usable-llm"
-import { resolveMarkdownImageSrc } from "@/lib/markdown-image-resolver"
+import { resolveEvidenceImageFilePath, resolveMarkdownImageSrc } from "@/lib/markdown-image-resolver"
 import { findRawSourceForImage, imageUrlToAbsolute } from "@/lib/raw-source-resolver"
+import { captionImageIndexEntries, loadImageCaptionBackfillState, refreshImageEvidenceFromIndex } from "@/lib/knowledge-image-index"
+import { preflightCaptionModel, type CaptionFailureDiagnosis } from "@/lib/vision-caption"
 import { MermaidDiagram } from "@/components/mermaid-diagram"
 
 // Module-level cache of source file names
@@ -124,6 +126,9 @@ export function ChatMessage({
             )
           )}
         </div>
+        {isAssistant && message.imageEvidence?.length ? (
+          <ImageEvidenceCards imageEvidence={message.imageEvidence} />
+        ) : null}
         {isAssistant && (mode === "revision-aware" || mode === "revision-loop") && message.answerMeta?.supplements?.length ? (
           <SupplementInsightsPanel supplements={message.answerMeta.supplements} />
         ) : null}
@@ -1021,9 +1026,10 @@ function extractCitedPages(text: string): CitedPage[] {
 
 interface StreamingMessageProps {
   content: string
+  imageEvidence?: ChatImageEvidence[]
 }
 
-export function StreamingMessage({ content }: StreamingMessageProps) {
+export function StreamingMessage({ content, imageEvidence = [] }: StreamingMessageProps) {
   const { thinking, answer } = useMemo(() => separateThinking(content), [content])
   const isThinking = thinking !== null && answer.length === 0
 
@@ -1042,7 +1048,398 @@ export function StreamingMessage({ content }: StreamingMessageProps) {
             <span className="animate-pulse">▊</span>
           </>
         )}
+        {imageEvidence.length > 0 && (
+          <div className="mt-3">
+            <ImageEvidenceCards imageEvidence={imageEvidence} compact />
+          </div>
+        )}
       </div>
+    </div>
+  )
+}
+
+function imageStatusLabel(status: ChatImageEvidence["status"]): string {
+  switch (status) {
+    case "captioned":
+      return "已有视觉说明"
+    case "indexed":
+      return "已索引"
+    case "missing_file":
+      return "图片文件缺失"
+    case "needs_caption":
+    default:
+      return "缺少视觉说明"
+  }
+}
+
+function captionDisplayText(item: ChatImageEvidence): string {
+  if (item.status === "needs_caption") return "待补图片说明"
+  const text = item.caption || item.fallbackCaption || ""
+  if (/缺少视觉说明|Embedded Images/i.test(text)) return "待补图片说明"
+  return text
+}
+
+function captionLlmConfig() {
+  const { multimodalConfig, llmConfig } = useWikiStore.getState()
+  if (!multimodalConfig.enabled) return null
+  if (multimodalConfig.useMainLlm) return llmConfig
+  return {
+    provider: multimodalConfig.provider,
+    apiKey: multimodalConfig.apiKey,
+    model: multimodalConfig.model,
+    ollamaUrl: multimodalConfig.ollamaUrl,
+    customEndpoint: multimodalConfig.customEndpoint,
+    apiMode: multimodalConfig.apiMode,
+    maxContextSize: llmConfig.maxContextSize,
+  }
+}
+
+function EvidenceImage({
+  item,
+  projectPath,
+}: {
+  item: ChatImageEvidence
+  projectPath: string | null
+}) {
+  const [src, setSrc] = useState(() => resolveMarkdownImageSrc(item.relPath, projectPath))
+  const [loadState, setLoadState] = useState<"asset" | "base64" | "missing">("asset")
+  const [loadDetail, setLoadDetail] = useState("")
+  const imageFilePath = useMemo(
+    () => resolveEvidenceImageFilePath(projectPath, item.relPath),
+    [item.relPath, projectPath],
+  )
+
+  useEffect(() => {
+    setSrc(resolveMarkdownImageSrc(item.relPath, projectPath))
+    setLoadState("asset")
+    setLoadDetail("")
+  }, [item.relPath, projectPath])
+
+  const fallbackToBase64 = useCallback(async () => {
+    if (loadState !== "asset") {
+      setLoadState("missing")
+      return
+    }
+    if (!imageFilePath) {
+      setLoadDetail("无法解析图片文件路径")
+      setLoadState("missing")
+      return
+    }
+    try {
+      const file = await readFileAsBase64(imageFilePath)
+      setSrc(`data:${file.mimeType};base64,${file.base64}`)
+      setLoadState("base64")
+      setLoadDetail("asset URL 加载失败，已使用本地 base64 兜底显示")
+    } catch (err) {
+      setLoadDetail(err instanceof Error ? err.message : String(err))
+      setLoadState("missing")
+    }
+  }, [imageFilePath, loadState])
+
+  if (loadState === "missing") {
+    return (
+      <div className="flex h-32 w-full flex-col items-center justify-center gap-1 bg-slate-50 px-3 text-center text-[11px] text-slate-500">
+        <ImageIcon className="h-5 w-5 text-slate-300" />
+        <span>图片文件未找到或无法加载</span>
+        <span className="max-w-full truncate text-[10px] text-slate-400">{item.relPath}</span>
+        {imageFilePath ? (
+          <span className="max-w-full truncate text-[10px] text-slate-400">{imageFilePath}</span>
+        ) : null}
+        {loadDetail ? (
+          <span className="line-clamp-2 text-[10px] text-slate-400">{loadDetail}</span>
+        ) : null}
+      </div>
+    )
+  }
+
+  return (
+    <img
+      src={src}
+      alt={captionDisplayText(item)}
+      className="h-32 w-full object-contain bg-slate-50"
+      loading="lazy"
+      onError={fallbackToBase64}
+      title={loadDetail || imageFilePath || item.relPath}
+    />
+  )
+}
+
+function MarkdownImage({
+  src,
+  alt,
+  projectPath,
+  className,
+}: {
+  src?: string
+  alt?: string
+  projectPath: string | null
+  className?: string
+}) {
+  const rawSrc = src ?? ""
+  const [resolvedSrc, setResolvedSrc] = useState(() => resolveMarkdownImageSrc(rawSrc, projectPath))
+  const [loadState, setLoadState] = useState<"asset" | "base64" | "missing">("asset")
+  const [loadDetail, setLoadDetail] = useState("")
+  const imageFilePath = useMemo(
+    () => resolveEvidenceImageFilePath(projectPath, rawSrc),
+    [projectPath, rawSrc],
+  )
+
+  useEffect(() => {
+    setResolvedSrc(resolveMarkdownImageSrc(rawSrc, projectPath))
+    setLoadState("asset")
+    setLoadDetail("")
+  }, [projectPath, rawSrc])
+
+  const fallbackToBase64 = useCallback(async () => {
+    if (loadState !== "asset") {
+      setLoadState("missing")
+      return
+    }
+    if (!imageFilePath) {
+      setLoadDetail("无法解析图片文件路径")
+      setLoadState("missing")
+      return
+    }
+    try {
+      const file = await readFileAsBase64(imageFilePath)
+      setResolvedSrc(`data:${file.mimeType};base64,${file.base64}`)
+      setLoadState("base64")
+      setLoadDetail("asset URL 加载失败，已使用本地 base64 兜底显示")
+    } catch (err) {
+      setLoadDetail(err instanceof Error ? err.message : String(err))
+      setLoadState("missing")
+    }
+  }, [imageFilePath, loadState])
+
+  if (loadState === "missing") {
+    return (
+      <span className="my-2 flex flex-col items-center justify-center gap-1 rounded border border-border/40 bg-slate-50 px-3 py-4 text-center text-[11px] text-slate-500">
+        <ImageIcon className="h-5 w-5 text-slate-300" />
+        <span>图片文件未找到或路径解析失败</span>
+        <span className="max-w-full truncate text-[10px] text-slate-400">{rawSrc}</span>
+        {imageFilePath ? (
+          <span className="max-w-full truncate text-[10px] text-slate-400">{imageFilePath}</span>
+        ) : null}
+        {loadDetail ? (
+          <span className="line-clamp-2 text-[10px] text-slate-400">{loadDetail}</span>
+        ) : null}
+      </span>
+    )
+  }
+
+  return (
+    <img
+      src={resolvedSrc}
+      alt={alt ?? ""}
+      className={className ?? "my-2 max-w-full rounded border border-border/40"}
+      loading="lazy"
+      onError={fallbackToBase64}
+      title={loadDetail || imageFilePath || rawSrc}
+    />
+  )
+}
+
+function ImageEvidenceCards({
+  imageEvidence,
+  compact = false,
+}: {
+  imageEvidence: ChatImageEvidence[]
+  compact?: boolean
+}) {
+  const projectPath = useWikiStore((s) => s.project?.path ?? null)
+  const updateMessage = useChatStore((s) => s.updateMessage)
+  const messages = useChatStore((s) => s.messages)
+  const bumpDataVersion = useWikiStore((s) => s.bumpDataVersion)
+  const [localEvidence, setLocalEvidence] = useState(imageEvidence)
+  const [captionState, setCaptionState] = useState<{
+    status: "idle" | "running" | "done" | "error"
+    detail: string
+    diagnosis?: CaptionFailureDiagnosis | null
+  }>({ status: "idle", detail: "" })
+
+  useEffect(() => {
+    setLocalEvidence(imageEvidence)
+  }, [imageEvidence])
+
+  const applyEvidenceRefresh = useCallback(async (statusDetail?: string) => {
+    if (!projectPath) return localEvidence
+    const refreshed = await refreshImageEvidenceFromIndex(projectPath, localEvidence)
+    setLocalEvidence(refreshed)
+    const evidencePaths = new Set(localEvidence.map((item) => item.relPath))
+    for (const message of messages) {
+      if (!message.imageEvidence?.some((item) => evidencePaths.has(item.relPath))) continue
+      updateMessage(message.id, {
+        imageEvidence: await refreshImageEvidenceFromIndex(projectPath, message.imageEvidence),
+      })
+    }
+    if (statusDetail) {
+      setCaptionState({ status: "done", detail: statusDetail })
+    }
+    return refreshed
+  }, [localEvidence, messages, projectPath, updateMessage])
+
+  const needsCaption = localEvidence.filter((item) => item.status === "needs_caption")
+  const visible = localEvidence.slice(0, compact ? 4 : 8)
+  if (visible.length === 0) return null
+
+  const captionVisibleImages = async () => {
+    if (!projectPath) {
+      setCaptionState({ status: "error", detail: "请先打开一个项目。" })
+      return
+    }
+    const projectBackfillState = await loadImageCaptionBackfillState(projectPath)
+    if (projectBackfillState.status === "completed") {
+      await applyEvidenceRefresh("本项目图片说明已经补齐过，已从最新图片索引刷新这条回答里的图片说明。")
+      return
+    }
+    if (projectBackfillState.status === "paused") {
+      setCaptionState({
+        status: "error",
+        detail: `本项目上次图片说明补齐已暂停：${projectBackfillState.recommendedAction ?? "请修复 VLM 配置后在知识问答顶部点击“重新补齐”。"}`,
+        diagnosis: {
+          code: "model_unavailable",
+          title: projectBackfillState.errorTitle ?? "图片说明补齐已暂停",
+          detail: projectBackfillState.errorDetail ?? "上次项目级补齐未完成。",
+          recommendedAction: projectBackfillState.recommendedAction ?? "修复 VLM 配置后在知识问答顶部点击重新补齐。",
+          retryable: true,
+        },
+      })
+      return
+    }
+    const llmConfig = captionLlmConfig()
+    if (!llmConfig) {
+      setCaptionState({ status: "error", detail: "未启用图片说明模型，请先在设置中开启多模态/VLM 配置。" })
+      return
+    }
+    const refreshedEvidence = await applyEvidenceRefresh()
+    const targetIds = refreshedEvidence
+      .filter((item) => item.status === "needs_caption")
+      .map((item) => item.imageId)
+    if (targetIds.length === 0) return
+
+    setCaptionState({ status: "running", detail: "正在检查 VLM 配置..." })
+    try {
+      const preflight = await preflightCaptionModel(llmConfig)
+      if (!preflight.ok) {
+        setCaptionState({
+          status: "error",
+          detail: preflight.diagnosis?.detail ?? "VLM 预检失败，已停止图片说明补齐。",
+          diagnosis: preflight.diagnosis ?? null,
+        })
+        return
+      }
+      setCaptionState({ status: "running", detail: `正在补齐 ${targetIds.length} 张图片说明...` })
+      const result = await captionImageIndexEntries(projectPath, targetIds, llmConfig, {
+        maxEntries: targetIds.length,
+        onProgress: (done, total) => {
+          setCaptionState({ status: "running", detail: `正在补齐图片说明 ${done}/${total}...` })
+        },
+      })
+      await applyEvidenceRefresh()
+      bumpDataVersion()
+      const summary = [
+        result.updated ? `新增 ${result.updated} 条` : "",
+        result.cached ? `复用缓存 ${result.cached} 条` : "",
+        result.failed ? `失败 ${result.failed} 条` : "",
+        result.skipped ? `跳过 ${result.skipped} 条` : "",
+      ].filter(Boolean).join("，")
+      const lastError = result.errors[result.errors.length - 1]
+      setCaptionState({
+        status: result.failed > 0 ? "error" : "done",
+        detail: result.failed > 0
+          ? `${summary}。${lastError?.title ? `${lastError.title}：` : ""}${lastError?.recommendedAction ?? lastError?.message ?? ""}`
+          : summary || "图片说明已是最新。",
+        diagnosis: lastError?.failureCode
+          ? {
+              code: lastError.failureCode,
+              title: lastError.title ?? "图片说明生成失败",
+              detail: lastError.message,
+              recommendedAction: lastError.recommendedAction ?? "请检查 VLM 配置后重试。",
+              retryable: lastError.retryable ?? true,
+            }
+          : null,
+      })
+    } catch (err) {
+      setCaptionState({
+        status: "error",
+        detail: err instanceof Error ? err.message : String(err),
+        diagnosis: null,
+      })
+    }
+  }
+
+  return (
+    <div className="rounded-2xl border border-sky-200 bg-sky-50/70 p-3 text-xs text-sky-950">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 font-medium">
+          <ImageIcon className="h-3.5 w-3.5" />
+          图片证据
+        </div>
+        <div className="flex items-center gap-1.5">
+          {!compact && needsCaption.length > 0 ? (
+            <button
+              type="button"
+              onClick={captionVisibleImages}
+              disabled={captionState.status === "running"}
+              className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-800 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {captionState.status === "running" ? "补齐中..." : "补齐这组图片说明"}
+            </button>
+          ) : null}
+          <span className="rounded-full bg-white px-2 py-0.5 text-[10px] text-sky-700">
+            已找到 {localEvidence.length} 张
+          </span>
+        </div>
+      </div>
+      {captionState.detail ? (
+        <div className={`mb-2 rounded-xl px-2.5 py-1.5 text-[10px] leading-4 ${
+          captionState.status === "error"
+            ? "bg-rose-50 text-rose-700"
+            : captionState.status === "done"
+              ? "bg-emerald-50 text-emerald-700"
+              : "bg-white text-sky-700"
+        }`}>
+          <div>{captionState.diagnosis?.title ? `${captionState.diagnosis.title}：` : ""}{captionState.detail}</div>
+          {captionState.diagnosis?.recommendedAction ? (
+            <div className="mt-1 font-medium">{captionState.diagnosis.recommendedAction}</div>
+          ) : null}
+        </div>
+      ) : null}
+      <div className="grid gap-2 sm:grid-cols-2">
+        {visible.map((item) => {
+          const caption = captionDisplayText(item)
+          return (
+            <figure key={`${item.imageId}-${item.relPath}`} className="overflow-hidden rounded-xl border border-sky-100 bg-white">
+              <EvidenceImage item={item} projectPath={projectPath} />
+              <figcaption className="space-y-1 px-2.5 py-2">
+                <div className="line-clamp-2 text-[11px] font-medium leading-4 text-slate-800">
+                  {caption}
+                </div>
+                {item.status === "needs_caption" ? (
+                  <div className="rounded-lg bg-amber-50 px-2 py-1 text-[10px] leading-4 text-amber-800">
+                    图片已检索到，但缺少视觉说明，需要后续 caption 补齐。
+                  </div>
+                ) : null}
+                <div className="text-[10px] leading-4 text-slate-500">
+                  来源：{item.sourcePath}{item.page ? ` · 第 ${item.page} 页` : ""}
+                </div>
+                <div className="text-[10px] leading-4 text-slate-500">
+                  命中：{item.matchedReason}
+                </div>
+                <div className="flex items-center justify-between text-[10px] text-slate-400">
+                  <span>{imageStatusLabel(item.status)}</span>
+                  <span>score {Math.round(item.score)}</span>
+                </div>
+              </figcaption>
+            </figure>
+          )
+        })}
+      </div>
+      {localEvidence.length > visible.length ? (
+        <p className="mt-2 text-[10px] text-sky-700">
+          还有 {localEvidence.length - visible.length} 张图片证据未展开显示。
+        </p>
+      ) : null}
     </div>
   )
 }
@@ -1080,13 +1477,11 @@ function MarkdownContent({ content }: { content: string }) {
                 </span>
               )
             },
-            img: ({ src, alt, ...props }) => (
-              <img
-                src={typeof src === "string" ? resolveMarkdownImageSrc(src, projectPath) : undefined}
+            img: ({ src, alt }) => (
+              <MarkdownImage
+                src={typeof src === "string" ? src : undefined}
                 alt={alt ?? ""}
-                className="my-2 max-w-full rounded border border-border/40"
-                loading="lazy"
-                {...props}
+                projectPath={projectPath}
               />
             ),
             table: ({ children, ...props }) => (

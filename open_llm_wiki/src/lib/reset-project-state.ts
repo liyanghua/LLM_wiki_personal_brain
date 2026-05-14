@@ -40,7 +40,6 @@ export async function resetProjectState(): Promise<void> {
   useResearchStore.setState({
     sessions: [],
     activeSessionId: null,
-    panelOpen: false,
   })
 
   useAgentModeStore.getState().reset()

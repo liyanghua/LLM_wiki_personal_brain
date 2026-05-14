@@ -12,8 +12,18 @@ import {
 } from "@/lib/quality-contracts"
 import { normalizePath } from "@/lib/path-utils"
 import { searchWiki } from "@/lib/search"
+import { loadImageIndex } from "@/lib/knowledge-image-index"
 import type { LlmConfig } from "@/stores/wiki-store"
 import type { FileNode } from "@/types/wiki"
+
+export interface ImageHealthMetrics {
+  imageFilesTotal: number
+  imageRefsTotal: number
+  imageCaptionedTotal: number
+  imageIndexedTotal: number
+  imageOrphanedTotal: number
+  imageEmptyAltTotal: number
+}
 
 export interface WikiHealthReport {
   generatedAt: string
@@ -21,8 +31,21 @@ export interface WikiHealthReport {
   semanticResults: LintResult[]
   compileResults: LintResult[]
   retrievalResults: LintResult[]
+  imageHealth: ImageHealthMetrics
   wikiHealth: HealthScorecard
   publishGate: PublishGateDecision
+}
+
+function flattenFiles(nodes: FileNode[]): FileNode[] {
+  const files: FileNode[] = []
+  for (const node of nodes) {
+    if (node.is_dir && node.children) {
+      files.push(...flattenFiles(node.children))
+    } else if (!node.is_dir) {
+      files.push(node)
+    }
+  }
+  return files
 }
 
 function flattenMdFiles(nodes: FileNode[]): FileNode[] {
@@ -59,6 +82,62 @@ async function readWikiPages(projectPath: string): Promise<Array<{ path: string;
     return pages.filter((page): page is { path: string; relativePath: string; content: string } => Boolean(page))
   } catch {
     return []
+  }
+}
+
+function normalizeImageRefUrl(rawUrl: string): string {
+  const url = normalizePath(rawUrl.trim())
+  if (!url) return url
+  const wikiIndex = url.lastIndexOf("/wiki/")
+  if (wikiIndex >= 0) return url.slice(wikiIndex + "/wiki/".length)
+  if (url.startsWith("wiki/")) return url.slice("wiki/".length)
+  return url.replace(/^\.\//, "")
+}
+
+export async function collectImageHealthMetrics(projectPath: string): Promise<ImageHealthMetrics> {
+  const pp = normalizePath(projectPath)
+  const [pages, imageIndex] = await Promise.all([
+    readWikiPages(pp),
+    loadImageIndex(pp),
+  ])
+
+  let imageFilesTotal = 0
+  try {
+    imageFilesTotal = flattenFiles(await listDirectory(`${pp}/wiki/media`))
+      .filter((file) => /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(file.name))
+      .length
+  } catch {
+    imageFilesTotal = 0
+  }
+
+  const imageRefUrls = new Set<string>()
+  let imageRefsTotal = 0
+  let imageEmptyAltTotal = 0
+  let imageCaptionedTotal = 0
+  const imageRefRe = /!\[([^\]]*)\]\(([^)\s]+)\)/g
+  for (const page of pages) {
+    for (const match of page.content.matchAll(new RegExp(imageRefRe.source, imageRefRe.flags))) {
+      const url = normalizeImageRefUrl(match[2] ?? "")
+      if (!url || !url.startsWith("media/")) continue
+      imageRefsTotal += 1
+      imageRefUrls.add(url)
+      const alt = String(match[1] ?? "").trim()
+      if (!alt) imageEmptyAltTotal += 1
+      else imageCaptionedTotal += 1
+    }
+  }
+
+  const indexedUrls = new Set(imageIndex.map((entry) => entry.relPath))
+  const imageIndexedTotal = imageIndex.length
+  const imageOrphanedTotal = [...indexedUrls].filter((url) => !imageRefUrls.has(url)).length
+
+  return {
+    imageFilesTotal,
+    imageRefsTotal,
+    imageCaptionedTotal,
+    imageIndexedTotal,
+    imageOrphanedTotal,
+    imageEmptyAltTotal,
   }
 }
 
@@ -630,6 +709,7 @@ export async function runWikiHealthAudit(
   const compileResults = await buildCompileResults(pp)
   const retrievalResults = await buildRetrievalResults(pp)
   const pages = await readWikiPages(pp)
+  const imageHealth = await collectImageHealthMetrics(pp)
 
   const report: WikiHealthReport = {
     generatedAt: new Date().toISOString(),
@@ -637,6 +717,7 @@ export async function runWikiHealthAudit(
     semanticResults,
     compileResults,
     retrievalResults,
+    imageHealth,
     wikiHealth: buildWikiHealthScorecard({
       structuralResults,
       semanticResults,

@@ -12,6 +12,7 @@ import { realFs, createTempProject, readFileRaw, writeFileRaw, fileExists } from
 import type { ReviewItem } from "@/stores/review-store"
 import type { Conversation, DisplayMessage } from "@/stores/chat-store"
 import type { AgentLoopSession } from "@/lib/agent-mode-types"
+import type { ResearchSession } from "@/lib/research-types"
 
 vi.mock("@/commands/fs", () => realFs)
 
@@ -25,6 +26,7 @@ import {
   loadAgentLoopSessions,
   saveAgentLoopSession,
 } from "./agent-mode-persist"
+import { saveResearchSession } from "./research-persist"
 
 let tmp: { path: string; cleanup: () => Promise<void> }
 
@@ -148,6 +150,98 @@ describe("agent loop persistence — round-trip", () => {
   })
 })
 
+describe("research persistence — opportunity cards", () => {
+  it("writes opportunity-cards.json for market opportunity sessions", async () => {
+    const session: ResearchSession = {
+      sessionId: "research-session-1",
+      topic: "AI 主图设计工具市场机会",
+      projectPath: tmp.path,
+      taskType: "market_opportunity_analysis",
+      businessContext: "面向电商运营团队",
+      targetMarket: "中小电商",
+      targetAudience: "运营负责人",
+      constraints: null,
+      linkedDocId: null,
+      targetFieldKey: null,
+      triggerSource: "market_opportunity_analysis",
+      breadth: 3,
+      depth: 2,
+      focus: null,
+      status: "done",
+      phase: "save_research_asset",
+      createdAt: 1,
+      updatedAt: 2,
+      followUpQuestions: [],
+      userAnswers: [],
+      plannedQueries: [],
+      sources: [],
+      learnings: [],
+      pendingFollowUps: [],
+      reportMarkdown: "report",
+      notesMarkdown: "",
+      findings: [],
+      opportunityCards: [
+        {
+          cardId: "card-1",
+          title: "主图测试助理",
+          targetSegment: "中小电商运营团队",
+          painPoint: "缺少持续测试能力",
+          opportunityHypothesis: "把生成与验证闭环结合",
+          evidenceSummary: "行业报告指出测试能力不足。",
+          sourceUrls: ["https://example.com"],
+          competitorSignals: ["竞品偏生成"],
+          risks: ["流量不足"],
+          validationExperiments: ["20 个 SKU A/B 测试"],
+          confidence: 0.7,
+          status: "draft",
+          researchSessionId: "research-session-1",
+          linkedDocId: null,
+          targetFieldKey: null,
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+      reportSections: null,
+      thread: [],
+      visitedQueries: [],
+      currentRound: 2,
+      providerStatus: null,
+      runtime: {
+        sessionId: "research-session-1",
+        phase: "save_research_asset",
+        status: "done",
+        title: "研究已完成",
+        detail: "done",
+        currentRound: 2,
+        maxDepth: 2,
+        providerStatus: null,
+        visitedUrls: [],
+        learnings: [],
+        followUpQuestions: [],
+        pendingUserAnswers: [],
+        currentQueries: [],
+        acceptedSourcesCount: 0,
+        completedArtifacts: [],
+        errorMessage: null,
+        canResume: true,
+      },
+      artifactDir: null,
+      reportPath: null,
+      sessionPath: null,
+      sourcesPath: null,
+      notesPath: null,
+      opportunityCardsPath: null,
+      errorMessage: null,
+    }
+
+    const saved = await saveResearchSession(tmp.path, session)
+
+    expect(saved.opportunityCardsPath).toBeTruthy()
+    expect(await fileExists(saved.opportunityCardsPath!)).toBe(true)
+    const raw = JSON.parse(await readFileRaw(saved.opportunityCardsPath!))
+    expect(raw[0]).toMatchObject({ cardId: "card-1", title: "主图测试助理" })
+  })
+})
+
 describe("chat persistence — round-trip (new format)", () => {
   function makeConv(id: string, title: string = "conv"): Conversation {
     return { id, title, createdAt: 0, updatedAt: 1 }
@@ -185,6 +279,66 @@ describe("chat persistence — round-trip (new format)", () => {
     // so compare as sets.
     expect(loaded.messages).toEqual(expect.arrayContaining(msgs))
     expect(loaded.messages).toHaveLength(2)
+  })
+
+  it("recovers orphan chat files when conversations.json is missing", async () => {
+    const orphanMessages: DisplayMessage[] = [
+      { ...makeMsg("m1", "orphan", "如何提升主图细节？"), timestamp: 100 },
+      { ...makeMsg("m2", "orphan", "可以先看图片证据。"), role: "assistant", timestamp: 200 },
+    ]
+    await writeFileRaw(
+      `${tmp.path}/.llm-wiki/chats/orphan.json`,
+      JSON.stringify(orphanMessages),
+    )
+
+    const loaded = await loadChatHistory(tmp.path)
+
+    expect(loaded.conversations).toHaveLength(1)
+    expect(loaded.conversations[0]).toMatchObject({
+      id: "orphan",
+      title: "如何提升主图细节？",
+      createdAt: 100,
+      updatedAt: 200,
+    })
+    expect(loaded.messages).toEqual(orphanMessages)
+  })
+
+  it("merges orphan chat files missing from conversations.json", async () => {
+    await writeFileRaw(
+      `${tmp.path}/.llm-wiki/conversations.json`,
+      JSON.stringify([makeConv("indexed", "已索引会话")]),
+    )
+    const indexedMessages = [makeMsg("m1", "indexed", "已有索引")]
+    const orphanMessages = [makeMsg("m2", "orphan", "索引漏掉的历史")]
+    await writeFileRaw(
+      `${tmp.path}/.llm-wiki/chats/indexed.json`,
+      JSON.stringify(indexedMessages),
+    )
+    await writeFileRaw(
+      `${tmp.path}/.llm-wiki/chats/orphan.json`,
+      JSON.stringify(orphanMessages),
+    )
+
+    const loaded = await loadChatHistory(tmp.path)
+
+    expect(loaded.conversations.map((conv) => conv.id)).toEqual(expect.arrayContaining(["indexed", "orphan"]))
+    expect(loaded.messages).toEqual(expect.arrayContaining([...indexedMessages, ...orphanMessages]))
+  })
+
+  it("does not persist empty global New Conversation entries", async () => {
+    await saveChatHistory(
+      tmp.path,
+      [
+        makeConv("empty", "New Conversation"),
+        { ...makeConv("revision", "修订线程"), scope: "revision-workbench", docId: "doc-1" },
+      ],
+      [],
+    )
+
+    const raw = JSON.parse(await readFileRaw(`${tmp.path}/.llm-wiki/conversations.json`)) as Conversation[]
+
+    expect(raw.map((conv) => conv.id)).not.toContain("empty")
+    expect(raw.map((conv) => conv.id)).toContain("revision")
   })
 
   it("preserves revision-aware answer meta through round-trip", async () => {
@@ -231,6 +385,61 @@ describe("chat persistence — round-trip (new format)", () => {
       origin: "model_experience",
       targetFieldKey: "validation_methods",
       linkedCardId: "card-1",
+    })
+  })
+
+  it("preserves references, answer meta, and image evidence through round-trip", async () => {
+    const convs = [makeConv("c1", "图文问答")]
+    const msgs: DisplayMessage[] = [
+      {
+        id: "m1",
+        role: "assistant",
+        content: "可以从细节图、卖点放大和对比信息入手。",
+        timestamp: 1,
+        conversationId: "c1",
+        references: [
+          { title: "主图设计", path: "wiki/sources/主图设计.md", kind: "source" },
+        ],
+        answerMeta: {
+          supplements: [
+            {
+              supplementId: "supp-1",
+              title: "可复用检查点",
+              origin: "evidence_extension",
+              disclaimer: "这条内容目前不属于已确认底稿。",
+              candidateSentence: "主图细节应优先服务首屏卖点识别。",
+              rationale: "图片证据显示细节放大能帮助第一眼识别。",
+              confidence: 0.7,
+            },
+          ],
+        },
+        imageEvidence: [
+          {
+            imageId: "image-1",
+            displayId: "img-1",
+            relPath: "media/主图设计/img-1.png",
+            caption: "主图细节图案例",
+            fallbackCaption: "主图设计 第 1 页图片 1",
+            sourcePath: "wiki/sources/主图设计.md",
+            page: 1,
+            matchedReason: "图片说明命中：细节图",
+            status: "captioned",
+            score: 42,
+          },
+        ],
+      },
+    ]
+
+    await saveChatHistory(tmp.path, convs, msgs)
+    const loaded = await loadChatHistory(tmp.path)
+
+    expect(loaded.messages).toHaveLength(1)
+    expect(loaded.messages[0].references?.[0]).toMatchObject({ path: "wiki/sources/主图设计.md" })
+    expect(loaded.messages[0].answerMeta?.supplements[0]?.candidateSentence).toContain("主图细节")
+    expect(loaded.messages[0].imageEvidence?.[0]).toMatchObject({
+      imageId: "image-1",
+      relPath: "media/主图设计/img-1.png",
+      status: "captioned",
     })
   })
 

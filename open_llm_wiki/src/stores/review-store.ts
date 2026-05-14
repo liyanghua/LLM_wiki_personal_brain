@@ -16,7 +16,7 @@ export interface ReviewItem {
   affectedPages?: string[]
   searchQueries?: string[]
   options: ReviewOption[]
-  origin?: "agent_mode" | "wiki_lint"
+  origin?: "agent_mode" | "wiki_lint" | "agent_skill_run"
   issueScope?: IssueScope
   rootCause?: RootCause | null
   linkedIssueId?: string | null
@@ -26,6 +26,14 @@ export interface ReviewItem {
   researchEvidenceSummary?: string | null
   researchSourceUrls?: string[]
   targetFieldKey?: string | null
+  semanticUnitIds?: string[]
+  semanticRelationIds?: string[]
+  conflictType?: string | null
+  resolutionAction?: string | null
+  agentRunId?: string | null
+  agentSkillId?: string | null
+  agentEvidenceRefs?: string[]
+  agentWikiRefs?: string[]
   resolved: boolean
   resolvedAction?: string
   createdAt: number
@@ -57,6 +65,14 @@ function normalizeReviewItem(item: ReviewItem): ReviewItem {
     researchEvidenceSummary: item.researchEvidenceSummary ?? null,
     researchSourceUrls: item.researchSourceUrls ?? [],
     targetFieldKey: item.targetFieldKey ?? null,
+    semanticUnitIds: item.semanticUnitIds ?? [],
+    semanticRelationIds: item.semanticRelationIds ?? [],
+    conflictType: item.conflictType ?? null,
+    resolutionAction: item.resolutionAction ?? null,
+    agentRunId: item.agentRunId ?? null,
+    agentSkillId: item.agentSkillId ?? null,
+    agentEvidenceRefs: item.agentEvidenceRefs ?? [],
+    agentWikiRefs: item.agentWikiRefs ?? [],
   }
 }
 
@@ -118,6 +134,10 @@ export const useReviewStore = create<ReviewState>((set) => ({
             researchEvidenceSummary: incoming.researchEvidenceSummary ?? old.researchEvidenceSummary,
             researchSourceUrls: Array.from(new Set([...(old.researchSourceUrls ?? []), ...(incoming.researchSourceUrls ?? [])])),
             targetFieldKey: incoming.targetFieldKey ?? old.targetFieldKey,
+            semanticUnitIds: Array.from(new Set([...(old.semanticUnitIds ?? []), ...(incoming.semanticUnitIds ?? [])])),
+            semanticRelationIds: Array.from(new Set([...(old.semanticRelationIds ?? []), ...(incoming.semanticRelationIds ?? [])])),
+            conflictType: incoming.conflictType ?? old.conflictType,
+            resolutionAction: incoming.resolutionAction ?? old.resolutionAction,
           })
         } else {
           const newItem = normalizeReviewItem({

@@ -8,11 +8,14 @@ import { SearchView } from "@/components/search/search-view"
 import { GraphView } from "@/components/graph/graph-view"
 import { ResearchWorkbench } from "@/components/research/research-workbench"
 import { StrategyWorkbench } from "@/components/strategy/strategy-workbench"
+import { ChatWorkbench } from "@/components/chat/chat-workbench"
 
 export function ContentArea() {
   const activeView = useWikiStore((s) => s.activeView)
 
   switch (activeView) {
+    case "chat":
+      return <ChatWorkbench />
     case "agent-mode":
       return <AgentWorkbench />
     case "settings":

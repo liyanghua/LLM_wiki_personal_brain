@@ -2,6 +2,7 @@ import { readFile, listDirectory } from "@/commands/fs"
 import type { FileNode } from "@/types/wiki"
 import { buildRetrievalGraph, calculateRelevance } from "./graph-relevance"
 import { normalizePath } from "@/lib/path-utils"
+import { loadSemanticUnitIndex } from "@/lib/semantic-units"
 import Graph from "graphology"
 import louvain from "graphology-communities-louvain"
 
@@ -281,6 +282,37 @@ export async function buildWikiGraph(
     linkCount: linkCounts.get(n.id) ?? 0,
     community: assignments.get(n.id) ?? 0,
   }))
+
+  try {
+    const semanticIndex = await loadSemanticUnitIndex(projectPath)
+    const existingNodeIds = new Set(nodes.map((node) => node.id))
+    const semanticNodes = semanticIndex.units.slice(0, 120).map((unit) => ({
+      id: unit.unitId,
+      label: `${unit.unitType}: ${unit.canonicalText.slice(0, 28)}`,
+      type: "semantic_unit",
+      path: `.llm-wiki/semantic-units/index.json#${unit.unitId}`,
+      linkCount: semanticIndex.relations.filter((relation) => relation.fromUnitId === unit.unitId || relation.toUnitId === unit.unitId).length,
+      community: 0,
+    }))
+    nodes.push(...semanticNodes)
+    for (const unit of semanticIndex.units.slice(0, 120)) {
+      const sourceNode = Array.from(nodeMap.values()).find((node) => node.label === unit.sourceName || node.path.endsWith(`/sources/${unit.sourceName.replace(/\.[^.]+$/, "")}.md`))
+      if (sourceNode && existingNodeIds.has(sourceNode.id)) {
+        edges.push({ source: sourceNode.id, target: unit.unitId, weight: 2 })
+      }
+    }
+    for (const relation of semanticIndex.relations) {
+      if (nodes.some((node) => node.id === relation.fromUnitId) && nodes.some((node) => node.id === relation.toUnitId)) {
+        edges.push({
+          source: relation.fromUnitId,
+          target: relation.toUnitId,
+          weight: relation.relationType === "contradicts" ? 5 : relation.relationType === "supports" ? 3 : 2,
+        })
+      }
+    }
+  } catch {
+    // Semantic graph is an optional overlay; page graph should still render.
+  }
 
   return { nodes, edges, communities }
 }

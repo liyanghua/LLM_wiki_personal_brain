@@ -30,6 +30,36 @@ import { normalizePath } from "@/lib/path-utils"
 
 const PASSTHROUGH_RE = /^(https?:|data:|blob:|file:|tauri:)/i
 
+function isAbsolutePath(path: string): boolean {
+  return path.startsWith("/") || /^[a-zA-Z]:/.test(path) || path.startsWith("\\\\")
+}
+
+export function normalizeLocalImagePath(rawPath: string): string {
+  const normalized = normalizePath(rawPath.trim()).replace(/^\.\//, "")
+  if (!/%[0-9a-f]{2}/i.test(normalized)) return normalized
+  try {
+    return decodeURIComponent(normalized)
+  } catch {
+    return normalized
+  }
+}
+
+export function resolveEvidenceImageFilePath(
+  projectPath: string | null,
+  relPath: string,
+): string | null {
+  if (!relPath) return null
+  if (PASSTHROUGH_RE.test(relPath)) return null
+
+  const cleaned = normalizeLocalImagePath(relPath)
+  if (isAbsolutePath(cleaned)) return cleaned
+  if (!projectPath) return cleaned
+
+  const pp = normalizePath(projectPath)
+  if (cleaned.startsWith("wiki/")) return `${pp}/${cleaned}`
+  return `${pp}/wiki/${cleaned}`
+}
+
 /**
  * `projectPath` is the wiki project's root directory. When null
  * (no project loaded), the resolver passes srcs through unchanged
@@ -45,8 +75,7 @@ export function resolveMarkdownImageSrc(
   if (!projectPath) return rawSrc
 
   const pp = normalizePath(projectPath)
-  const isAbsolute =
-    rawSrc.startsWith("/") || /^[a-zA-Z]:/.test(rawSrc) || rawSrc.startsWith("\\\\")
+  const isAbsolute = isAbsolutePath(rawSrc)
 
   // Absolute paths get fed straight to convertFileSrc — the user (or
   // some plugin) explicitly chose that path; we don't second-guess.
@@ -54,7 +83,7 @@ export function resolveMarkdownImageSrc(
 
   // Strip a leading `./` for cleanliness; treat `media/foo.png` and
   // `./media/foo.png` identically.
-  const cleaned = rawSrc.replace(/^\.\//, "")
+  const cleaned = normalizeLocalImagePath(rawSrc)
 
   // Some enhanced document-preparation outputs already store paths as
   // `wiki/media/...` (project-root relative), while the wiki pages

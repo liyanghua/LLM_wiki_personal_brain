@@ -24,6 +24,7 @@ import type {
 import {
   appendQualityDraftReport,
   ensureWorkingDraft,
+  loadAgentModeReports,
   loadRevisionVersions,
   makeVersionFileName,
   projectDocTitle,
@@ -41,6 +42,7 @@ import { ensureScenePack } from "@/lib/scene-pack"
 import { runStep15Structuring } from "@/lib/structuring"
 import { writeSceneCompile } from "@/lib/scene-compile"
 import { writeStrategyBundle } from "@/lib/strategy-compile"
+import { rebuildSemanticUnitIndex } from "@/lib/semantic-units"
 
 interface PublishRevisionOptions {
   llmConfig?: LlmConfig
@@ -623,7 +625,11 @@ export async function recomputeLoopAfterAcceptance(input: {
   }
 
   const compileResult = await writeSceneCompile(input.projectPath, mergedReport, scenePack)
-  const strategyResult = await writeStrategyBundle(input.projectPath, mergedReport, scenePack)
+  const existingReports = await loadAgentModeReports(input.projectPath)
+  await rebuildSemanticUnitIndex(input.projectPath, [...existingReports.filter((item) => item.docId !== mergedReport.docId), mergedReport])
+  const strategyResult = await writeStrategyBundle(input.projectPath, mergedReport, scenePack, {
+    llmConfig: input.llmConfig ?? null,
+  })
   const finalizedReport: AgentModeReport = {
     ...mergedReport,
     supportingWikiPages: compileResult.supportingWikiPages,
@@ -632,13 +638,13 @@ export async function recomputeLoopAfterAcceptance(input: {
     compileIr: compileResult.compileIr,
     strategyBundle: strategyResult.bundle,
     strategyCoverage: strategyResult.coverage,
-    confirmedStrategyCardIds: strategyResult.bundle.strategyCards
+    confirmedStrategyCardIds: (strategyResult.bundle.actionCards ?? strategyResult.bundle.strategyCards)
       .filter((card) => card.status === "confirmed" || card.status === "promoted_to_skill")
-      .map((card) => card.cardId),
-    warnings: [...mergedReport.warnings, ...compileResult.warnings],
+      .map((card) => "actionCardId" in card ? card.actionCardId : card.cardId),
+    warnings: [...mergedReport.warnings, ...compileResult.warnings, ...(strategyResult.bundle.warnings ?? [])],
     compileSidecar: {
       ...mergedReport.compileSidecar,
-      warnings: [...mergedReport.warnings, ...compileResult.warnings],
+      warnings: [...mergedReport.warnings, ...compileResult.warnings, ...(strategyResult.bundle.warnings ?? [])],
       compilePlan: compileResult.plan,
       compileCoverage: compileResult.compileCoverage,
     },
@@ -783,7 +789,11 @@ export async function publishRevisionVersion(
     },
   })
   const compileResult = await writeSceneCompile(projectPath, compiledReport, scenePack)
-  const strategyResult = await writeStrategyBundle(projectPath, compiledReport, scenePack)
+  const existingReports = await loadAgentModeReports(projectPath)
+  await rebuildSemanticUnitIndex(projectPath, [...existingReports.filter((item) => item.docId !== compiledReport.docId), compiledReport])
+  const strategyResult = await writeStrategyBundle(projectPath, compiledReport, scenePack, {
+    llmConfig: options?.llmConfig ?? null,
+  })
   const finalCompiledReport: AgentModeReport = {
     ...compiledReport,
     supportingWikiPages: compileResult.supportingWikiPages,
@@ -792,13 +802,13 @@ export async function publishRevisionVersion(
     compileIr: compileResult.compileIr,
     strategyBundle: strategyResult.bundle,
     strategyCoverage: strategyResult.coverage,
-    confirmedStrategyCardIds: strategyResult.bundle.strategyCards
+    confirmedStrategyCardIds: (strategyResult.bundle.actionCards ?? strategyResult.bundle.strategyCards)
       .filter((card) => card.status === "confirmed" || card.status === "promoted_to_skill")
-      .map((card) => card.cardId),
-    warnings: [...compiledReport.warnings, ...compileResult.warnings],
+      .map((card) => "actionCardId" in card ? card.actionCardId : card.cardId),
+    warnings: [...compiledReport.warnings, ...compileResult.warnings, ...(strategyResult.bundle.warnings ?? [])],
     compileSidecar: {
       ...compiledReport.compileSidecar,
-      warnings: [...compiledReport.warnings, ...compileResult.warnings],
+      warnings: [...compiledReport.warnings, ...compileResult.warnings, ...(strategyResult.bundle.warnings ?? [])],
       compilePlan: compileResult.plan,
       compileCoverage: compileResult.compileCoverage,
     },

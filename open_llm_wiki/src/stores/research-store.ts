@@ -16,11 +16,9 @@ import { useWikiStore } from "@/stores/wiki-store"
 interface ResearchState {
   sessions: ResearchSession[]
   activeSessionId: string | null
-  panelOpen: boolean
   maxConcurrent: number
 
   enterResearchWorkbench: (input?: EnterResearchWorkbenchInput) => string
-  setPanelOpen: (open: boolean) => void
   setSessions: (sessions: ResearchSession[]) => void
   setActiveSessionId: (id: string | null) => void
   updateSession: (sessionId: string, updates: Partial<ResearchSession>) => void
@@ -116,6 +114,11 @@ function normalizeSession(session: ResearchSession): ResearchSession {
   )
   return {
     ...session,
+    taskType: session.taskType ?? "generic_research",
+    businessContext: session.businessContext ?? null,
+    targetMarket: session.targetMarket ?? null,
+    targetAudience: session.targetAudience ?? null,
+    constraints: session.constraints ?? null,
     linkedDocId: session.linkedDocId ?? null,
     targetFieldKey: session.targetFieldKey ?? null,
     triggerSource: session.triggerSource ?? null,
@@ -137,6 +140,7 @@ function normalizeSession(session: ResearchSession): ResearchSession {
           targetFieldKey: finding.targetFieldKey ?? session.targetFieldKey ?? null,
         }))
       : [],
+    opportunityCards: Array.isArray(session.opportunityCards) ? session.opportunityCards : [],
     reportSections: normalizeReportSections(session.reportSections),
     thread: Array.isArray(session.thread) ? session.thread : [],
     visitedQueries: Array.isArray(session.visitedQueries) ? session.visitedQueries : [],
@@ -148,6 +152,7 @@ function normalizeSession(session: ResearchSession): ResearchSession {
     sessionPath: session.sessionPath ?? null,
     sourcesPath: session.sourcesPath ?? null,
     notesPath: session.notesPath ?? null,
+    opportunityCardsPath: session.opportunityCardsPath ?? null,
     errorMessage: session.errorMessage ?? null,
   }
 }
@@ -161,6 +166,11 @@ function makeSession(input?: EnterResearchWorkbenchInput): ResearchSession {
     sessionId,
     topic,
     projectPath: useWikiStore.getState().project?.path ?? "",
+    taskType: input?.taskType ?? "generic_research",
+    businessContext: input?.businessContext ?? null,
+    targetMarket: input?.targetMarket ?? null,
+    targetAudience: input?.targetAudience ?? null,
+    constraints: input?.constraints ?? null,
     linkedDocId: input?.linkedDocId ?? null,
     targetFieldKey: input?.targetFieldKey ?? null,
     triggerSource: input?.triggerSource ?? null,
@@ -173,13 +183,14 @@ function makeSession(input?: EnterResearchWorkbenchInput): ResearchSession {
     updatedAt: createdAt,
     followUpQuestions: [],
     userAnswers: [],
-    plannedQueries: input?.searchQueries ?? [],
+    plannedQueries: input?.searchQueries ?? input?.seedQuestions ?? [],
     sources: [],
     learnings: [],
     pendingFollowUps: [],
     reportMarkdown: "",
     notesMarkdown: "",
     findings: [],
+    opportunityCards: [],
     reportSections: null,
     thread: [],
     visitedQueries: [],
@@ -191,6 +202,7 @@ function makeSession(input?: EnterResearchWorkbenchInput): ResearchSession {
     sessionPath: null,
     sourcesPath: null,
     notesPath: null,
+    opportunityCardsPath: null,
     errorMessage: null,
   }
 }
@@ -206,7 +218,6 @@ function mergeSession(oldSession: ResearchSession, updates: Partial<ResearchSess
 export const useResearchStore = create<ResearchState>((set) => ({
   sessions: [],
   activeSessionId: null,
-  panelOpen: false,
   maxConcurrent: 2,
 
   enterResearchWorkbench: (input) => {
@@ -215,12 +226,9 @@ export const useResearchStore = create<ResearchState>((set) => ({
     set((state) => ({
       sessions: [session, ...state.sessions],
       activeSessionId: session.sessionId,
-      panelOpen: false,
     }))
     return session.sessionId
   },
-
-  setPanelOpen: (panelOpen) => set({ panelOpen }),
 
   setSessions: (sessions) =>
     set(() => {
@@ -362,7 +370,6 @@ export const useResearchStore = create<ResearchState>((set) => ({
     set({
       sessions: [],
       activeSessionId: null,
-      panelOpen: false,
       maxConcurrent: 2,
     }),
 }))

@@ -24,6 +24,8 @@ export type ResearchThreadEntryKind =
   | "source_fetched"
   | "learning_extracted"
   | "followup_generated"
+  | "report_started"
+  | "report_progress"
   | "report_generated"
   | "finding_extracted"
   | "finding_promoted"
@@ -35,6 +37,61 @@ export type ResearchFindingPromotionState =
   | "promoted_to_revision"
   | "promoted_to_review"
   | "promoted_to_wiki_draft"
+
+export type ResearchTaskType =
+  | "generic_research"
+  | "market_opportunity_analysis"
+
+export type OpportunityCardStatus =
+  | "draft"
+  | "confirmed"
+  | "rejected"
+  | "promoted_to_review"
+  | "promoted_to_strategy"
+
+export interface OpportunityCard {
+  cardId: string
+  title: string
+  targetSegment: string
+  painPoint: string
+  opportunityHypothesis: string
+  evidenceSummary: string
+  sourceUrls: string[]
+  competitorSignals: string[]
+  risks: string[]
+  validationExperiments: string[]
+  confidence: number
+  status: OpportunityCardStatus
+  researchSessionId?: string | null
+  linkedDocId?: string | null
+  targetFieldKey?: string | null
+  createdAt: string
+}
+
+export interface ResearchTaskRequest {
+  taskType: ResearchTaskType
+  topic: string
+  businessContext?: string | null
+  targetMarket?: string | null
+  targetAudience?: string | null
+  constraints?: string | null
+  seedQuestions?: string[]
+  breadth: number
+  depth: number
+  linkedDocId?: string | null
+  targetFieldKey?: string | null
+}
+
+export interface ResearchTaskResult {
+  session: ResearchSession
+  sources: ResearchSourceEvidence[]
+  learnings: string[]
+  reportMarkdown: string
+  findings: ResearchFinding[]
+  opportunityCards?: OpportunityCard[]
+  warnings: string[]
+  degraded: boolean
+}
 
 export interface ResearchProviderStatus {
   provider: "firecrawl" | "tavily" | "none"
@@ -132,6 +189,11 @@ export interface ResearchSession {
   sessionId: string
   topic: string
   projectPath: string
+  taskType?: ResearchTaskType
+  businessContext?: string | null
+  targetMarket?: string | null
+  targetAudience?: string | null
+  constraints?: string | null
   linkedDocId?: string | null
   targetFieldKey?: string | null
   triggerSource?: string | null
@@ -151,6 +213,7 @@ export interface ResearchSession {
   reportMarkdown: string
   notesMarkdown: string
   findings: ResearchFinding[]
+  opportunityCards?: OpportunityCard[]
   reportSections?: ResearchReportSections | null
   thread: ResearchThreadEntry[]
   visitedQueries: string[]
@@ -162,11 +225,18 @@ export interface ResearchSession {
   sessionPath?: string | null
   sourcesPath?: string | null
   notesPath?: string | null
+  opportunityCardsPath?: string | null
   errorMessage?: string | null
 }
 
 export interface EnterResearchWorkbenchInput {
+  taskType?: ResearchTaskType
   topic?: string
+  businessContext?: string | null
+  targetMarket?: string | null
+  targetAudience?: string | null
+  constraints?: string | null
+  seedQuestions?: string[]
   linkedDocId?: string | null
   targetFieldKey?: string | null
   triggerSource?: string | null

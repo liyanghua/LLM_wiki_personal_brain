@@ -1,11 +1,13 @@
 import { createDirectory, readFile, writeFile } from "@/commands/fs"
 import { getFileStem, normalizePath } from "@/lib/path-utils"
+import { searchKnowledgeImages } from "@/lib/knowledge-image-index"
 import type {
   AgentModeReport,
   CompileCoverageEntry,
   CompileCoverageReport,
   CompileIR,
   GroundTruthFieldValue,
+  KnowledgeImageEvidenceRef,
   SceneCompilePagePlan,
   SceneCompilePlan,
   ScenePack,
@@ -92,6 +94,125 @@ function trimLines(value: string): string[] {
     .split(/\n+/)
     .map((item) => item.trim())
     .filter(Boolean)
+}
+
+function normalizeImageMarkdownUrl(rawUrl: string): string {
+  const url = normalizePath(rawUrl).trim()
+  if (!url) return url
+  if (/^(https?:|data:|blob:|file:|tauri:)/i.test(url)) return url
+  const wikiIndex = url.lastIndexOf("/wiki/")
+  if (wikiIndex >= 0) return url.slice(wikiIndex + "/wiki/".length)
+  if (url.startsWith("wiki/")) return url.slice("wiki/".length)
+  return url.replace(/^\.\//, "")
+}
+
+function extractMarkdownImageRefs(markdown: string): Array<{ url: string; caption: string }> {
+  const refs: Array<{ url: string; caption: string }> = []
+  const seen = new Set<string>()
+  const re = /!\[([^\]]*)\]\(([^)\s]+)\)/g
+  for (const match of markdown.matchAll(re)) {
+    const url = normalizeImageMarkdownUrl(match[2] ?? "")
+    if (!url || seen.has(url)) continue
+    seen.add(url)
+    refs.push({
+      url,
+      caption: asTrimmedString(match[1]) || `原始文档图片 ${refs.length + 1}`,
+    })
+  }
+  return refs
+}
+
+function buildImageEvidenceRefs(report: AgentModeReport): KnowledgeImageEvidenceRef[] {
+  const seen = new Set<string>()
+  const refs: KnowledgeImageEvidenceRef[] = []
+  const addRef = (input: {
+    url: string
+    caption: string
+    sourceRef: string
+    sourceAnchorId?: string | null
+    page?: number | null
+  }) => {
+    const url = normalizeImageMarkdownUrl(input.url)
+    if (!url || seen.has(url) || refs.length >= 8) return
+    seen.add(url)
+    refs.push({
+      imageId: `image-evidence-${refs.length + 1}`,
+      url,
+      caption: input.caption || `原始文档图片 ${refs.length + 1}`,
+      sourceRef: input.sourceRef,
+      sourceAnchorId: input.sourceAnchorId ?? null,
+      page: input.page ?? null,
+    })
+  }
+
+  for (const block of report.documentIr.blocks) {
+    const assetPath = asTrimmedString(block.assetPath)
+    const isImageBlock = block.blockType === "image" || block.evidenceKind === "image" || Boolean(assetPath)
+    if (!isImageBlock || !assetPath) continue
+    addRef({
+      url: assetPath,
+      caption: asTrimmedString(block.textContent),
+      sourceRef: block.sourceRefs[0] ?? report.sourcePath,
+      sourceAnchorId: block.sourceAnchorId ?? null,
+      page: block.page ?? null,
+    })
+  }
+
+  for (const image of extractMarkdownImageRefs(`${report.sourceContent}\n\n${report.analysis}`)) {
+    addRef({
+      url: image.url,
+      caption: image.caption,
+      sourceRef: report.sourcePath,
+    })
+  }
+
+  return refs
+}
+
+async function enrichImageEvidenceRefsFromIndex(
+  projectPath: string,
+  report: AgentModeReport,
+  artifacts: SceneCompileArtifacts,
+): Promise<void> {
+  if (!isHeroImageScene(report) || (artifacts.compileIr.imageEvidenceRefs?.length ?? 0) >= 4) return
+  const query = [
+    report.sourceName,
+    report.understanding.summary,
+    artifacts.compileIr.fieldValueMap.creative_assets,
+    "主图 细节图 案例 素材 版式 构图 视觉",
+  ].filter(Boolean).join(" ")
+  const hits = await searchKnowledgeImages(projectPath, query, { limit: 6 }).catch(() => [])
+  const existing = new Set((artifacts.compileIr.imageEvidenceRefs ?? []).map((item) => normalizeImageMarkdownUrl(item.url)))
+  for (const hit of hits) {
+    if (existing.has(hit.relPath) || (artifacts.compileIr.imageEvidenceRefs?.length ?? 0) >= 6) continue
+    existing.add(hit.relPath)
+    artifacts.compileIr.imageEvidenceRefs = [
+      ...(artifacts.compileIr.imageEvidenceRefs ?? []),
+      {
+        imageId: `image-index-evidence-${(artifacts.compileIr.imageEvidenceRefs?.length ?? 0) + 1}`,
+        url: hit.relPath,
+        caption: hit.caption || hit.fallbackCaption,
+        sourceRef: hit.sourcePath,
+        sourceAnchorId: null,
+        page: hit.page,
+      },
+    ]
+  }
+}
+
+function renderImageEvidenceRefs(refs: readonly KnowledgeImageEvidenceRef[]): string[] {
+  return refs.slice(0, 6).flatMap((item, index) => {
+    const label = item.caption || `原始文档图片 ${index + 1}`
+    const meta = [
+      item.page ? `页码 ${item.page}` : "",
+      item.sourceAnchorId ? `锚点 ${item.sourceAnchorId}` : "",
+      item.sourceRef ? `来源 ${item.sourceRef}` : "",
+    ].filter(Boolean).join("；")
+    return [
+      `![${label}](${item.url})`,
+      meta ? `- ${label}（${meta}）` : `- ${label}`,
+    ]
+  })
 }
 
 function normalizePageKey(value: unknown): SceneCompilePagePlan["pageKey"] | null {
@@ -271,6 +392,10 @@ function buildBusinessRelationMermaid(compileIr: CompileIR): string {
   return lines.join("\n")
 }
 
+function sourceRefsForFields(compileIr: CompileIR, fieldKeys: string[]): string[] {
+  return uniq(fieldKeys.flatMap((fieldKey) => compileIr.sourceRefsByField?.[fieldKey] ?? []))
+}
+
 function renderFieldProjectionSection(
   compileIr: CompileIR,
   fieldKeys: string[],
@@ -280,7 +405,7 @@ function renderFieldProjectionSection(
     if (!value) return []
     const label = compileIr.fieldLabelMap[fieldKey] || fieldKey
     const snippets = trimLines(value).slice(0, 5)
-    const evidence = compileIr.fieldEvidenceMap[fieldKey] ?? []
+    const evidence = compileIr.fieldEvidenceMap?.[fieldKey] ?? []
     return [
       `### ${label}`,
       "",
@@ -326,6 +451,7 @@ function buildCompileIr(report: AgentModeReport): CompileIR {
       ].slice(0, 12),
     ),
     imageEvidence: report.understanding.imageEvidenceHighlights,
+    imageEvidenceRefs: buildImageEvidenceRefs(report),
     metrics,
     keyEntities: report.understanding.entityCandidates,
     businessObjects: report.understanding.businessObjects,
@@ -510,7 +636,7 @@ export function buildSceneCompileArtifacts(
     const pageKey = plan.fieldToPageMap[field.key] ?? null
     const page = pageKey ? pageLookup.get(pageKey as SceneCompilePagePlan["pageKey"]) ?? null : null
     const sectionKey = plan.sectionMappings[field.key] ?? null
-    const refs = compileIr.sourceRefsByField[field.key] ?? []
+    const refs = compileIr.sourceRefsByField?.[field.key] ?? []
     let rootCause: CompileCoverageEntry["rootCause"] = "written"
     if (!value) {
       rootCause = "missing_value"
@@ -587,11 +713,7 @@ function renderBusinessIndex(
   report: AgentModeReport,
   artifacts: SceneCompileArtifacts,
 ): string {
-  const refs = uniq([
-    ...artifacts.compileIr.sourceRefsByField.business_goal ?? [],
-    ...artifacts.compileIr.sourceRefsByField.mainline_steps ?? [],
-    ...artifacts.compileIr.sourceRefsByField.key_judgements ?? [],
-  ])
+  const refs = sourceRefsForFields(artifacts.compileIr, ["business_goal", "mainline_steps", "key_judgements"])
   const related = [
     `[[business/${artifacts.docSlug}/主链路步骤|主链路步骤]]`,
     `[[business/${artifacts.docSlug}/关键判断|关键判断]]`,
@@ -665,10 +787,7 @@ function renderHeroAudiences(
   report: AgentModeReport,
   artifacts: SceneCompileArtifacts,
 ): string {
-  const refs = uniq([
-    ...artifacts.compileIr.sourceRefsByField.target_audiences ?? [],
-    ...artifacts.compileIr.sourceRefsByField.audience_situations ?? [],
-  ])
+  const refs = sourceRefsForFields(artifacts.compileIr, ["target_audiences", "audience_situations"])
   return [
     docFrontmatter(
       "hero_audiences",
@@ -703,10 +822,7 @@ function renderHeroValueProps(
   report: AgentModeReport,
   artifacts: SceneCompileArtifacts,
 ): string {
-  const refs = uniq([
-    ...artifacts.compileIr.sourceRefsByField.selling_points ?? [],
-    ...artifacts.compileIr.sourceRefsByField.business_goal ?? [],
-  ])
+  const refs = sourceRefsForFields(artifacts.compileIr, ["selling_points", "business_goal"])
   return [
     docFrontmatter(
       "hero_value_props",
@@ -741,7 +857,7 @@ function renderHeroCreativeAssets(
   report: AgentModeReport,
   artifacts: SceneCompileArtifacts,
 ): string {
-  const refs = uniq([...artifacts.compileIr.sourceRefsByField.creative_assets ?? []])
+  const refs = sourceRefsForFields(artifacts.compileIr, ["creative_assets"])
   return [
     docFrontmatter(
       "hero_creative_assets",
@@ -760,7 +876,10 @@ function renderHeroCreativeAssets(
     ),
     joinSection(
       "图片与视觉证据",
-      artifacts.compileIr.imageEvidence.map((item) => `- ${item}`),
+      uniq([
+        ...renderImageEvidenceRefs(artifacts.compileIr.imageEvidenceRefs ?? []),
+        ...artifacts.compileIr.imageEvidence.map((item) => `- ${item}`),
+      ]),
     ),
     joinSection(
       "卖点如何被表达出来",
@@ -776,10 +895,7 @@ function renderHeroMetricJudgement(
   report: AgentModeReport,
   artifacts: SceneCompileArtifacts,
 ): string {
-  const refs = uniq([
-    ...artifacts.compileIr.sourceRefsByField.metric_signals ?? [],
-    ...artifacts.compileIr.sourceRefsByField.decision_rules ?? [],
-  ])
+  const refs = sourceRefsForFields(artifacts.compileIr, ["metric_signals", "decision_rules"])
   return [
     docFrontmatter(
       "hero_metric_judgement",
@@ -814,10 +930,7 @@ function renderHeroActionsExperiments(
   report: AgentModeReport,
   artifacts: SceneCompileArtifacts,
 ): string {
-  const refs = uniq([
-    ...artifacts.compileIr.sourceRefsByField.action_playbook ?? [],
-    ...artifacts.compileIr.sourceRefsByField.experiment_evidence ?? [],
-  ])
+  const refs = sourceRefsForFields(artifacts.compileIr, ["action_playbook", "experiment_evidence"])
   return [
     docFrontmatter(
       "hero_actions_experiments",
@@ -857,11 +970,7 @@ function renderMainlineSteps(
   report: AgentModeReport,
   artifacts: SceneCompileArtifacts,
 ): string {
-  const refs = uniq([
-    ...artifacts.compileIr.sourceRefsByField.mainline_steps ?? [],
-    ...artifacts.compileIr.sourceRefsByField.execution_steps ?? [],
-    ...artifacts.compileIr.sourceRefsByField.process_flow_or_business_model ?? [],
-  ])
+  const refs = sourceRefsForFields(artifacts.compileIr, ["mainline_steps", "execution_steps", "process_flow_or_business_model"])
   const frontmatter = docFrontmatter(
     "business_process",
     `${report.sourceName.replace(/\.[^.]+$/, "")} · 主链路步骤`,
@@ -909,11 +1018,7 @@ function renderKeyJudgements(
   artifacts: SceneCompileArtifacts,
 ): string {
   const judgementField = report.groundTruth.fields.find((field) => field.key === "judgment_criteria")
-  const refs = uniq([
-    ...artifacts.compileIr.sourceRefsByField.key_judgements ?? [],
-    ...artifacts.compileIr.sourceRefsByField.judgment_criteria ?? [],
-    ...artifacts.compileIr.sourceRefsByField.validation_methods ?? [],
-  ])
+  const refs = sourceRefsForFields(artifacts.compileIr, ["key_judgements", "judgment_criteria", "validation_methods"])
   const frontmatter = docFrontmatter(
     "business_judgements",
     `${report.sourceName.replace(/\.[^.]+$/, "")} · 关键判断`,
@@ -961,10 +1066,7 @@ function renderBoundaries(
   const boundaryField = report.groundTruth.fields.find((field) =>
     ["boundaries", "exceptions_and_non_applicable_scope"].includes(field.key),
   )
-  const refs = uniq([
-    ...artifacts.compileIr.sourceRefsByField.boundaries ?? [],
-    ...artifacts.compileIr.sourceRefsByField.exceptions_and_non_applicable_scope ?? [],
-  ])
+  const refs = sourceRefsForFields(artifacts.compileIr, ["boundaries", "exceptions_and_non_applicable_scope"])
   const frontmatter = docFrontmatter(
     "business_boundaries",
     `${report.sourceName.replace(/\.[^.]+$/, "")} · 边界与例外`,
@@ -1003,11 +1105,7 @@ function renderEvidenceCases(
 ): string {
   const evidenceField = report.groundTruth.fields.find((field) => field.key === "evidence")
   const validationField = report.groundTruth.fields.find((field) => field.key === "validation_methods")
-  const refs = uniq([
-    ...artifacts.compileIr.sourceRefsByField.evidence ?? [],
-    ...artifacts.compileIr.sourceRefsByField.validation_methods ?? [],
-    ...artifacts.compileIr.sourceRefsByField.metrics ?? [],
-  ])
+  const refs = sourceRefsForFields(artifacts.compileIr, ["evidence", "validation_methods", "metrics"])
   const frontmatter = docFrontmatter(
     "business_evidence",
     `${report.sourceName.replace(/\.[^.]+$/, "")} · 证据与案例`,
@@ -1031,7 +1129,10 @@ function renderEvidenceCases(
     ),
     joinSection(
       "图片与视觉证据",
-      artifacts.compileIr.imageEvidence.map((item) => `- ${item}`),
+      uniq([
+        ...renderImageEvidenceRefs(artifacts.compileIr.imageEvidenceRefs ?? []),
+        ...artifacts.compileIr.imageEvidence.map((item) => `- ${item}`),
+      ]),
     ),
     joinSection(
       "修订痕迹与补充线索",
@@ -1278,6 +1379,7 @@ export async function writeSceneCompile(
 ): Promise<SceneCompileWriteResult> {
   const pp = normalizePath(projectPath)
   const artifacts = buildSceneCompileArtifacts(report, scenePack)
+  await enrichImageEvidenceRefsFromIndex(pp, report, artifacts)
   const pages = renderPages(report, artifacts)
   const writtenPaths: string[] = []
 

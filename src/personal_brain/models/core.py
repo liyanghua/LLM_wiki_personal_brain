@@ -311,9 +311,14 @@ class StrategySkillCandidateManifest(BaseModel):
     scene_id: str
     linked_doc_ids: list[str] = Field(default_factory=list)
     origin_strategy_card_ids: list[str] = Field(default_factory=list)
+    origin_action_card_ids: list[str] = Field(default_factory=list)
     wiki_refs: list[str] = Field(default_factory=list)
     source_refs: list[str] = Field(default_factory=list)
     validation_criteria: list[str] = Field(default_factory=list)
+    required_inputs: list[str] = Field(default_factory=list)
+    output_artifact: str = ""
+    action_steps: list[str] = Field(default_factory=list)
+    schema_version: int = 1
     promotion_state: str = "candidate"
     generated_at: str
 
@@ -329,6 +334,45 @@ class ApprovedSkillSpec(BaseModel):
     source_refs: list[str] = Field(default_factory=list)
     input_schema: dict[str, Any] = Field(default_factory=dict)
     output_schema: dict[str, Any] = Field(default_factory=dict)
+    execution_spec: dict[str, Any] = Field(default_factory=dict)
+
+
+class SkillExecutionSpec(BaseModel):
+    execution_mode: str = "template"
+    requires_human_review: bool = True
+    context_sources: list[str] = Field(default_factory=lambda: ["wiki_refs", "strategy_bundle", "ground_truth"])
+
+
+class SkillValidationError(BaseModel):
+    field: str
+    message: str
+    code: str = "missing_required_input"
+
+
+class SkillExecutionContext(BaseModel):
+    skill_id: str
+    skill_title: str
+    wiki_refs: list[str] = Field(default_factory=list)
+    source_refs: list[str] = Field(default_factory=list)
+    strategy_bundle_path: str = ""
+    ground_truth_path: str = ""
+    context_refs: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class SkillExecutionResult(BaseModel):
+    skill_id: str
+    title: str
+    status: str
+    structured_output: dict[str, Any] = Field(default_factory=dict)
+    validation_errors: list[SkillValidationError] = Field(default_factory=list)
+    context_refs: list[str] = Field(default_factory=list)
+    trace: list[str] = Field(default_factory=list)
+    execution_timeline: list[dict[str, Any]] = Field(default_factory=list)
+    degradation_reason: dict[str, Any] | None = None
+    step_executions: list[dict[str, Any]] = Field(default_factory=list)
+    execution_plan: dict[str, Any] = Field(default_factory=dict)
+    execution_mode: str = ""
 
 
 class AgentRunRequest(BaseModel):
@@ -338,6 +382,8 @@ class AgentRunRequest(BaseModel):
     run_mode: str
     selected_skill_ids: list[str] = Field(default_factory=list)
     grounding_sources: list[str] = Field(default_factory=list)
+    task_input: dict[str, Any] = Field(default_factory=dict)
+    create_review_item: bool = False
 
 
 class AgentRunResult(BaseModel):
@@ -348,6 +394,17 @@ class AgentRunResult(BaseModel):
     run_mode: str
     selected_skill_ids: list[str] = Field(default_factory=list)
     grounding_sources: list[str] = Field(default_factory=list)
+    status: str = "completed"
+    executed_skills: list[dict[str, Any]] = Field(default_factory=list)
+    context_refs: list[str] = Field(default_factory=list)
+    structured_output: dict[str, Any] = Field(default_factory=dict)
+    validation_errors: list[dict[str, Any]] = Field(default_factory=list)
+    execution_timeline: list[dict[str, Any]] = Field(default_factory=list)
+    degradation_reason: dict[str, Any] | None = None
+    step_executions: list[dict[str, Any]] = Field(default_factory=list)
+    execution_plan: dict[str, Any] = Field(default_factory=dict)
+    execution_mode: str = ""
+    review_item_id: str | None = None
     result_summary: str
     trace: list[str] = Field(default_factory=list)
     output_artifacts: list[str] = Field(default_factory=list)

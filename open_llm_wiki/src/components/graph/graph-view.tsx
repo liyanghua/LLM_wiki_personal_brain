@@ -5,7 +5,6 @@ import "@react-sigma/core/lib/style.css"
 import forceAtlas2 from "graphology-layout-forceatlas2"
 import { Network, RefreshCw, ZoomIn, ZoomOut, Maximize, Layers, Tag, Lightbulb, AlertTriangle, Link2, X, Search, Loader2 } from "lucide-react"
 import { ErrorBoundary } from "@/components/error-boundary"
-import { useResearchStore } from "@/stores/research-store"
 import { Button } from "@/components/ui/button"
 import { useWikiStore } from "@/stores/wiki-store"
 import { readFile } from "@/commands/fs"
@@ -416,10 +415,9 @@ export function GraphView() {
   // Sigma crashes with "could not find suitable program for node type circle"
   // when its canvas is resized by external layout changes.
 
-  // 1. Detect panel open/close (selectedFile, researchPanel, insights)
+  // 1. Detect panel open/close (selectedFile, insights)
   const selectedFileForLayout = useWikiStore((s) => s.selectedFile)
-  const researchPanelForLayout = useResearchStore((s) => s.panelOpen)
-  const layoutKey = `${!!selectedFileForLayout}-${researchPanelForLayout}-${showInsights}`
+  const layoutKey = `${!!selectedFileForLayout}-${showInsights}`
   const prevLayoutKey = useRef(layoutKey)
 
   useEffect(() => {

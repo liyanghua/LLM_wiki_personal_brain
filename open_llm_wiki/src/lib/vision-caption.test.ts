@@ -19,7 +19,12 @@ vi.mock("./llm-client", async () => {
   }
 })
 
-import { captionImage, CAPTION_PROMPT } from "./vision-caption"
+import {
+  captionImage,
+  CAPTION_PROMPT,
+  classifyCaptionFailure,
+  preflightCaptionModel,
+} from "./vision-caption"
 import type { LlmConfig } from "@/stores/wiki-store"
 import type { ChatMessage } from "./llm-providers"
 
@@ -179,5 +184,48 @@ describe("captionImage", () => {
     expect(promptText).toContain("Figure 3: Q2 revenue chart")
     // Empty side becomes `(none)` so the structure is uniform.
     expect(promptText).toMatch(/Text after image ---\s*\(none\)/)
+  })
+
+  it("preflights the VLM with a tiny text-only request before image captioning", async () => {
+    mockStreamChat.mockImplementation(async (_c, _m, cb) => {
+      cb.onToken("正常")
+      cb.onDone()
+    })
+
+    const result = await preflightCaptionModel(cfg)
+
+    expect(result.ok).toBe(true)
+    expect(mockStreamChat).toHaveBeenCalledTimes(1)
+    const messages = mockStreamChat.mock.calls[0][1] as ChatMessage[]
+    expect(messages[0].content).toBe("请只回复两个字：正常")
+  })
+
+  it("classifies invalid API key errors with DashScope region guidance", async () => {
+    const diagnosis = classifyCaptionFailure(
+      new Error("HTTP 401 — Incorrect API key provided"),
+      {
+        provider: "custom",
+        customEndpoint: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+      },
+    )
+
+    expect(diagnosis.code).toBe("invalid_api_key")
+    expect(diagnosis.retryable).toBe(false)
+    expect(diagnosis.detail).toContain("endpoint 区域一致")
+    expect(diagnosis.recommendedAction).toContain("API Key")
+  })
+
+  it("preflight returns a classified failure when the provider rejects the key", async () => {
+    mockStreamChat.mockImplementation(async (_c, _m, cb) => {
+      cb.onError(new Error("HTTP 401 — Incorrect API key provided"))
+    })
+
+    const result = await preflightCaptionModel({
+      ...cfg,
+      customEndpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.diagnosis?.code).toBe("invalid_api_key")
   })
 })

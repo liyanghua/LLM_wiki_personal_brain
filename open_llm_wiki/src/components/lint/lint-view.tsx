@@ -354,6 +354,43 @@ export function LintView() {
               </div>
             </section>
 
+            {report.imageHealth ? (
+              <section className="rounded-2xl border bg-white p-4 shadow-sm">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium text-zinc-900">图片证据索引</p>
+                    <p className="mt-1 text-xs text-zinc-500">
+                      用于判断原文图片是否已经进入可检索证据层；空 alt 或缺 caption 会影响图文问答质量。
+                    </p>
+                  </div>
+                  {report.imageHealth.imageEmptyAltTotal > 0 ? (
+                    <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">
+                      {report.imageHealth.imageEmptyAltTotal} 张图片缺少说明
+                    </span>
+                  ) : (
+                    <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">
+                      图片说明较完整
+                    </span>
+                  )}
+                </div>
+                <div className="mt-4 grid gap-2 md:grid-cols-3 xl:grid-cols-6">
+                  {[
+                    ["图片文件", report.imageHealth.imageFilesTotal],
+                    ["Markdown 引用", report.imageHealth.imageRefsTotal],
+                    ["已有说明", report.imageHealth.imageCaptionedTotal],
+                    ["已入索引", report.imageHealth.imageIndexedTotal],
+                    ["孤儿图片", report.imageHealth.imageOrphanedTotal],
+                    ["空 alt", report.imageHealth.imageEmptyAltTotal],
+                  ].map(([label, value]) => (
+                    <div key={label} className="rounded-2xl bg-zinc-50 px-3 py-3">
+                      <p className="text-xs text-zinc-500">{label}</p>
+                      <p className="mt-1 text-2xl font-semibold text-zinc-900">{value}</p>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
             <section className="rounded-2xl border bg-white p-4 shadow-sm">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>

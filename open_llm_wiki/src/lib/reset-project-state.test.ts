@@ -96,7 +96,7 @@ describe("resetProjectState — Zustand stores", () => {
     expect(useActivityStore.getState().items).toEqual([])
   })
 
-  it("clears research store sessions and closes panel", async () => {
+  it("clears research store sessions", async () => {
     useResearchStore.setState({
       sessions: [
         {
@@ -135,13 +135,11 @@ describe("resetProjectState — Zustand stores", () => {
         } as unknown as ReturnType<typeof useResearchStore.getState>["sessions"][number],
       ],
       activeSessionId: "t1",
-      panelOpen: true,
     })
 
     await resetProjectState()
     expect(useResearchStore.getState().sessions).toEqual([])
     expect(useResearchStore.getState().activeSessionId).toBeNull()
-    expect(useResearchStore.getState().panelOpen).toBe(false)
   })
 })
 

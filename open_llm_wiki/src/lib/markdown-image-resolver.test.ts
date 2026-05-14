@@ -15,7 +15,7 @@ vi.mock("@tauri-apps/api/core", () => ({
   convertFileSrc: (path: string) => `tauri-asset:${path}`,
 }))
 
-import { resolveMarkdownImageSrc } from "./markdown-image-resolver"
+import { resolveEvidenceImageFilePath, resolveMarkdownImageSrc } from "./markdown-image-resolver"
 
 describe("resolveMarkdownImageSrc", () => {
   const PROJECT = "/Users/me/MyWiki"
@@ -47,6 +47,26 @@ describe("resolveMarkdownImageSrc", () => {
     expect(
       resolveMarkdownImageSrc("media/rope-paper/img-1.png", PROJECT),
     ).toBe("tauri-asset:/Users/me/MyWiki/wiki/media/rope-paper/img-1.png")
+  })
+
+  it("does not double-prefix paths that already start with wiki/", () => {
+    expect(
+      resolveMarkdownImageSrc("wiki/media/主图设计/img-1.png", PROJECT),
+    ).toBe("tauri-asset:/Users/me/MyWiki/wiki/media/主图设计/img-1.png")
+  })
+
+  it("decodes URL-encoded local media paths before passing them to convertFileSrc", () => {
+    expect(
+      resolveMarkdownImageSrc(
+        "media/%E9%AB%98%E7%82%B9%E5%87%BB%E7%8E%87%E4%B8%BB%E5%9B%BE%E5%88%B6%E4%BD%9C/img-12.png",
+        PROJECT,
+      ),
+    ).toBe("tauri-asset:/Users/me/MyWiki/wiki/media/高点击率主图制作/img-12.png")
+  })
+
+  it("does not decode external URLs", () => {
+    const url = "https://example.com/media/%E9%AB%98/img-12.png"
+    expect(resolveMarkdownImageSrc(url, PROJECT)).toBe(url)
   })
 
   it("strips a leading ./ for cleanliness", () => {
@@ -104,5 +124,36 @@ describe("resolveMarkdownImageSrc", () => {
 
   it("returns empty string verbatim for empty src", () => {
     expect(resolveMarkdownImageSrc("", PROJECT)).toBe("")
+  })
+})
+
+describe("resolveEvidenceImageFilePath", () => {
+  const PROJECT = "/Users/me/MyWiki"
+
+  it("resolves evidence media paths under the project wiki root", () => {
+    expect(resolveEvidenceImageFilePath(PROJECT, "media/主图设计/img-1.png")).toBe(
+      "/Users/me/MyWiki/wiki/media/主图设计/img-1.png",
+    )
+  })
+
+  it("supports project-root wiki/media paths without adding wiki twice", () => {
+    expect(resolveEvidenceImageFilePath(PROJECT, "wiki/media/主图设计/img-1.png")).toBe(
+      "/Users/me/MyWiki/wiki/media/主图设计/img-1.png",
+    )
+  })
+
+  it("decodes URL-encoded evidence paths before resolving the file path", () => {
+    expect(
+      resolveEvidenceImageFilePath(
+        PROJECT,
+        "wiki/media/%E9%AB%98%E7%82%B9%E5%87%BB%E7%8E%87%E4%B8%BB%E5%9B%BE%E5%88%B6%E4%BD%9C/img-12.png",
+      ),
+    ).toBe("/Users/me/MyWiki/wiki/media/高点击率主图制作/img-12.png")
+  })
+
+  it("returns absolute paths unchanged", () => {
+    expect(resolveEvidenceImageFilePath(PROJECT, "/tmp/主图设计/img-1.png")).toBe(
+      "/tmp/主图设计/img-1.png",
+    )
   })
 })

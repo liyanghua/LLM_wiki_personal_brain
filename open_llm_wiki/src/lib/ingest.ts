@@ -52,6 +52,7 @@ import { buildStructuredContext, runStep15Structuring } from "@/lib/structuring"
 import { detectSourceKind, prepareDocumentForIngest } from "@/lib/document-preparation"
 import { writeSceneCompile } from "@/lib/scene-compile"
 import { writeStrategyBundle } from "@/lib/strategy-compile"
+import { buildSemanticConflictReviewItems, rebuildSemanticUnitIndex } from "@/lib/semantic-units"
 import {
   appendQualityDraftReport,
   ensureWorkingDraft,
@@ -621,9 +622,10 @@ async function autoIngestImpl(
   // ── Step 1.8 + Step 2: compile plan + schema-aware wiki compile ──
   activity.updateItem(activityId, { detail: "按业务结构生成知识页..." })
   const compileResult = await writeSceneCompile(pp, structuredReport, scenePack)
-  const strategyResult = await writeStrategyBundle(pp, structuredReport, scenePack)
+  await rebuildSemanticUnitIndex(pp, [...useAgentModeStore.getState().reports.filter((item) => item.docId !== structuredReport.docId), structuredReport])
+  const strategyResult = await writeStrategyBundle(pp, structuredReport, scenePack, { llmConfig, signal })
   const writtenPaths = [...compileResult.writtenPaths, ...strategyResult.writtenPaths]
-  const writeWarnings = [...structuredReport.warnings, ...compileResult.warnings]
+  const writeWarnings = [...structuredReport.warnings, ...compileResult.warnings, ...(strategyResult.bundle.warnings ?? [])]
   const hardFailures: string[] = []
 
   const compiledReport: AgentModeReport = {
@@ -634,9 +636,9 @@ async function autoIngestImpl(
     compileIr: compileResult.compileIr,
     strategyBundle: strategyResult.bundle,
     strategyCoverage: strategyResult.coverage,
-    confirmedStrategyCardIds: strategyResult.bundle.strategyCards
+    confirmedStrategyCardIds: (strategyResult.bundle.actionCards ?? strategyResult.bundle.strategyCards)
       .filter((card) => card.status === "confirmed" || card.status === "promoted_to_skill")
-      .map((card) => card.cardId),
+      .map((card) => "actionCardId" in card ? card.actionCardId : card.cardId),
     warnings: writeWarnings,
     compileSidecar: {
       ...structuredReport.compileSidecar,
@@ -648,6 +650,7 @@ async function autoIngestImpl(
   }
   await saveAgentModeReport(pp, compiledReport)
   useAgentModeStore.getState().upsertReport(compiledReport)
+  const semanticIndex = await rebuildSemanticUnitIndex(pp, [...useAgentModeStore.getState().reports.filter((item) => item.docId !== compiledReport.docId), compiledReport])
 
   if (writeWarnings.length > 0) {
     const summary = writeWarnings.length === 1
@@ -676,7 +679,10 @@ async function autoIngestImpl(
   }
 
   // ── Step 4: Build review items from revision cards ────────────
-  const reviewItems = buildReviewItemsFromAgentReport(compiledReport, sp)
+  const reviewItems = [
+    ...buildReviewItemsFromAgentReport(compiledReport, sp),
+    ...buildSemanticConflictReviewItems(semanticIndex),
+  ]
   if (reviewItems.length > 0) {
     useReviewStore.getState().addItems(reviewItems)
   }

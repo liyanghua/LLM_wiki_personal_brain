@@ -78,6 +78,19 @@ export interface KnowledgeAnswerMeta {
   supplements: SupplementInsight[]
 }
 
+export interface ChatImageEvidence {
+  imageId: string
+  displayId?: string
+  relPath: string
+  caption: string
+  fallbackCaption?: string
+  sourcePath: string
+  page: number | null
+  matchedReason: string
+  status: "indexed" | "captioned" | "needs_caption" | "missing_file"
+  score: number
+}
+
 export interface DisplayMessage {
   id: string
   role: "user" | "assistant" | "system"
@@ -87,6 +100,34 @@ export interface DisplayMessage {
   references?: MessageReference[]  // pages cited in this response, saved at creation time
   answerMeta?: KnowledgeAnswerMeta | null
   revisionMeta?: RevisionMessageMeta | null
+  imageEvidence?: ChatImageEvidence[]
+}
+
+export function conversationMatchesScope(
+  conversation: Conversation,
+  scope: ConversationScope,
+  options: {
+    docId?: string | null
+    loopId?: string | null
+  } = {},
+): boolean {
+  if ((conversation.scope ?? "global") !== scope) return false
+  if (scope === "revision-workbench" && options.docId) {
+    return (conversation.docId ?? null) === options.docId
+  }
+  if (scope === "revision-loop" && options.docId) {
+    return (conversation.docId ?? null) === options.docId
+      && (conversation.loopId ?? null) === (options.loopId ?? null)
+  }
+  return true
+}
+
+export function shouldShowConversationInSidebar(
+  conversation: Conversation,
+  messageCount: number,
+): boolean {
+  if (messageCount > 0) return true
+  return (conversation.scope ?? "global") !== "global"
 }
 
 interface AddMessageOptions {
@@ -94,6 +135,7 @@ interface AddMessageOptions {
   references?: MessageReference[]
   answerMeta?: KnowledgeAnswerMeta | null
   revisionMeta?: RevisionMessageMeta | null
+  imageEvidence?: ChatImageEvidence[]
   skipTitleAuto?: boolean
 }
 
@@ -103,6 +145,7 @@ interface ChatState {
   messages: DisplayMessage[]
   isStreaming: boolean
   streamingContent: string
+  streamingImageEvidence: ChatImageEvidence[]
   mode: "chat" | "ingest"
   ingestSource: string | null
   maxHistoryMessages: number
@@ -126,8 +169,14 @@ interface ChatState {
   setMessages: (messages: DisplayMessage[]) => void
   setConversations: (conversations: Conversation[]) => void
   setStreaming: (streaming: boolean) => void
+  setStreamingImageEvidence: (imageEvidence: ChatImageEvidence[]) => void
   appendStreamToken: (token: string) => void
-  finalizeStream: (content: string, references?: MessageReference[], answerMeta?: KnowledgeAnswerMeta | null) => void
+  finalizeStream: (
+    content: string,
+    references?: MessageReference[],
+    answerMeta?: KnowledgeAnswerMeta | null,
+    imageEvidence?: ChatImageEvidence[],
+  ) => void
   updateMessage: (id: string, patch: Partial<DisplayMessage>) => void
   setMode: (mode: ChatState["mode"]) => void
   setIngestSource: (path: string | null) => void
@@ -156,6 +205,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   messages: [],
   isStreaming: false,
   streamingContent: "",
+  streamingImageEvidence: [],
   mode: "chat",
   ingestSource: null,
   maxHistoryMessages: 10,
@@ -243,6 +293,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         references: options?.references,
         answerMeta: options?.answerMeta ?? null,
         revisionMeta: options?.revisionMeta ?? null,
+        imageEvidence: options?.imageEvidence,
       }
 
       // Auto-set title from first user message (first 50 chars)
@@ -272,22 +323,30 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   setConversations: (conversations) => set({ conversations }),
 
-  setStreaming: (isStreaming) => set({ isStreaming }),
+  setStreaming: (isStreaming) =>
+    set((state) => ({
+      isStreaming,
+      streamingImageEvidence: isStreaming ? state.streamingImageEvidence : [],
+    })),
+
+  setStreamingImageEvidence: (imageEvidence) => set({ streamingImageEvidence: imageEvidence }),
 
   appendStreamToken: (token) =>
     set((state) => ({
       streamingContent: state.streamingContent + token,
     })),
 
-  finalizeStream: (content, references, answerMeta) =>
+  finalizeStream: (content, references, answerMeta, imageEvidence) =>
     set((state) => {
       const { activeConversationId, conversations } = state
       if (!activeConversationId) {
         return {
           isStreaming: false,
           streamingContent: "",
+          streamingImageEvidence: [],
         }
       }
+      const resolvedImageEvidence = imageEvidence ?? state.streamingImageEvidence
 
       const newMessage: DisplayMessage = {
         id: nextId(),
@@ -297,11 +356,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
         conversationId: activeConversationId,
         references,
         answerMeta: answerMeta ?? null,
+        imageEvidence: resolvedImageEvidence.length > 0 ? resolvedImageEvidence : undefined,
       }
 
       return {
         isStreaming: false,
         streamingContent: "",
+        streamingImageEvidence: [],
         messages: [...state.messages, newMessage],
         conversations: conversations.map((c) =>
           c.id === activeConversationId
