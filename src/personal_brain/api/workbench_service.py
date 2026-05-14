@@ -9,6 +9,7 @@ from personal_brain.config import BrainConfig
 from personal_brain.eval.runner import EvaluationRunner
 from personal_brain.extraction.service import ExtractionInterviewService
 from personal_brain.models import EvaluationReport, OntologyCandidate, SessionRecord, SkillCandidateManifest, WritebackBundle
+from personal_brain.models import ExtractionInterviewState
 from personal_brain.retrieval.query_engine import QueryEngine
 from personal_brain.utils.files import read_json
 from personal_brain.writeback.service import WritebackService
@@ -38,24 +39,172 @@ class WorkbenchApiService:
         return self.query_engine.ask(question).model_dump(mode="json")
 
     def start_extraction_interview(self, payload: dict | None = None) -> dict:
-        question = str((payload or {}).get("question", "")).strip()
+        payload = payload or {}
+        topic = str(payload.get("topic", "")).strip()
+        goal = str(payload.get("goal", "")).strip()
+        question = str(payload.get("question", "")).strip()
+        if not question and topic:
+            question = f"{topic}：{goal}" if goal else topic
         scene_id_raw = (payload or {}).get("scene_id")
         scene_id = str(scene_id_raw).strip() or None if scene_id_raw is not None else None
+        session_seed = {
+            "title": str(payload.get("title", "")).strip() or topic,
+            "topic_type": str(payload.get("topic_type", "")).strip(),
+            "target_object": str(payload.get("target_object", "")).strip() or topic,
+            "goal": goal,
+            "created_by": str(payload.get("created_by", "")).strip(),
+            "mapped_stage": str(payload.get("mapped_stage", "")).strip(),
+            "mapped_step": str(payload.get("mapped_step", "")).strip(),
+            "anchor_mode": str(payload.get("anchor_mode", "")).strip() or "sop_bundle",
+            "anchor_bundle_id": str(payload.get("anchor_bundle_id", "")).strip() or "sop_mainline_001",
+        }
         if not question:
             raise ApiBadRequest("question is required")
-        return self.extraction_service.start(question, scene_id=scene_id).model_dump(mode="json")
+        return self._serialize_extraction_state(
+            self.extraction_service.start(question, scene_id=scene_id, session_seed=session_seed)
+        )
 
     def get_extraction_interview(self, interview_id: str) -> dict:
-        return self.extraction_service.get(interview_id).model_dump(mode="json")
+        return self._serialize_extraction_state(self.extraction_service.get(interview_id))
 
     def continue_extraction_interview(self, interview_id: str, payload: dict | None = None) -> dict:
-        user_answer = str((payload or {}).get("user_answer", "")).strip()
-        if not user_answer:
+        payload = payload or {}
+        turn_action = str(payload.get("turn_action", "answer")).strip() or "answer"
+        user_answer = str(payload.get("user_answer", "")).strip()
+        if turn_action == "answer" and not user_answer:
             raise ApiBadRequest("user_answer is required")
-        return self.extraction_service.continue_interview(interview_id, user_answer).model_dump(mode="json")
+        if turn_action == "skip":
+            return self._serialize_extraction_state(self.extraction_service.skip_interview(interview_id))
+        if turn_action == "summarize":
+            return self._serialize_extraction_state(self.extraction_service.summarize_interview(interview_id))
+        if turn_action != "answer":
+            raise ApiBadRequest(f"unsupported turn_action: {turn_action}")
+        return self._serialize_extraction_state(self.extraction_service.continue_interview(interview_id, user_answer))
 
     def finish_extraction_interview(self, interview_id: str) -> dict:
-        return self.extraction_service.finish(interview_id).model_dump(mode="json")
+        return self._serialize_extraction_state(self.extraction_service.finish(interview_id))
+
+    def update_extraction_candidate_asset(self, interview_id: str, asset_id: str, payload: dict | None = None) -> dict:
+        return self._serialize_extraction_state(
+            self.extraction_service.update_candidate_asset(interview_id, asset_id, payload)
+        )
+
+    def _serialize_extraction_state(self, state: ExtractionInterviewState) -> dict:
+        payload = state.model_dump(mode="json")
+        payload["interview_view"] = self._build_interview_view(state)
+        payload["autosave_state"] = {
+            "saved": bool(state.state_path),
+            "state_path": state.state_path or "",
+            "updated_at": state.updated_at or "",
+            "status": "saved" if state.state_path else "pending",
+        }
+        payload["degraded_retrieval_mode"] = self._build_degraded_retrieval_mode(state)
+        return payload
+
+    def _build_interview_view(self, state: ExtractionInterviewState) -> dict:
+        candidate_questions = list(state.next_question_plan.candidate_questions if state.next_question_plan else [])
+        followup_questions = [
+            item.question_text
+            for item in state.followup_questions
+            if item.status in {"selected", "open", "pending"}
+        ]
+        recommended_followups = list(dict.fromkeys([*candidate_questions, *followup_questions]))[:4]
+        current_prompt = recommended_followups[0] if recommended_followups else ""
+        if state.status == "completed":
+            current_prompt = "访谈已完成，可以查看本次总结与候选资产。"
+        elif not current_prompt:
+            current_prompt = "请继续补充这个主题里最关键的判断、条件或反例。"
+
+        return {
+            "current_prompt": current_prompt,
+            "prompt_type_label": self._prompt_type_label(
+                state.next_question_plan.next_question_type if state.next_question_plan else state.question_type
+            ),
+            "phase_label": self._phase_label(state),
+            "recommended_followups": recommended_followups,
+            "structure_counts": self._structure_counts(state),
+            "answer_frame": self._build_answer_frame(state),
+            "can_skip": state.status != "completed",
+            "can_summarize": state.status != "completed",
+            "autosave_state": "saved" if state.state_path else "pending",
+        }
+
+    def _prompt_type_label(self, question_type: str) -> str:
+        labels = {
+            "definition": "当前在问：定义澄清",
+            "judgement": "当前在问：判断逻辑",
+            "condition": "当前在问：适用条件",
+            "counterexample": "当前在问：反例",
+            "boundary": "当前在问：边界/例外",
+            "evidence": "当前在问：证据依据",
+            "slot-fill": "当前在问：关键缺口",
+            "clarification": "当前在问：澄清补充",
+            "stop": "当前在做：收束总结",
+        }
+        return labels.get(question_type, "当前在问：知识榨取")
+
+    def _phase_label(self, state: ExtractionInterviewState) -> str:
+        if state.status == "completed":
+            return "已完成"
+        if state.current_stage:
+            return f"正在围绕 {state.current_stage} 推进"
+        if state.turn_index <= 1:
+            return "正在建立主题"
+        if any(asset.status == "needs_clarification" for asset in state.candidate_assets):
+            return "正在补边界条件"
+        return "正在抽取判断逻辑"
+
+    def _structure_counts(self, state: ExtractionInterviewState) -> dict[str, int]:
+        counts = {"concepts": 0, "heuristics": 0, "cases": 0, "boundaries": 0}
+        for asset in state.candidate_assets:
+            if asset.status == "rejected":
+                continue
+            if asset.asset_type == "concept":
+                counts["concepts"] += 1
+            elif asset.asset_type == "heuristic":
+                counts["heuristics"] += 1
+            elif asset.asset_type == "case":
+                counts["cases"] += 1
+            elif asset.asset_type == "boundary":
+                counts["boundaries"] += 1
+        return counts
+
+    def _build_answer_frame(self, state: ExtractionInterviewState) -> dict:
+        mainline_steps = [
+            asset.title
+            for asset in state.candidate_assets
+            if asset.card_group == "mainline_step" and asset.status != "rejected"
+        ]
+        key_judgements = [
+            asset.title
+            for asset in state.candidate_assets
+            if asset.card_group == "judgement" and asset.status != "rejected"
+        ]
+        evidence_refs: list[str] = []
+        for asset in state.candidate_assets:
+            if asset.card_group == "evidence" and asset.status != "rejected":
+                evidence_refs.extend(asset.evidence_refs)
+        if not evidence_refs:
+            for block in state.answer_grounding_blocks[:4]:
+                evidence_refs.extend(block.refs)
+        return {
+            "primary_answer": state.current_answer_summary or "",
+            "mainline_steps": list(dict.fromkeys(mainline_steps)),
+            "key_judgements": list(dict.fromkeys(key_judgements)),
+            "evidence_refs": list(dict.fromkeys(ref for ref in evidence_refs if ref)),
+        }
+
+    def _build_degraded_retrieval_mode(self, state: ExtractionInterviewState) -> dict:
+        buckets = state.retrieval_buckets
+        backend = buckets.retrieval_backend if buckets else "legacy"
+        expected = self.config.search_backend
+        active = expected == "qmd" and backend != "qmd"
+        return {
+            "active": active,
+            "configured_backend": expected,
+            "actual_backend": backend,
+            "reason": "qmd unavailable or returned no mappable hits" if active else "",
+        }
 
     def recent_memory(self) -> dict:
         session_records = self._load_session_records()

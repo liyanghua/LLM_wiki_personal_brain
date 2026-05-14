@@ -7,6 +7,9 @@ from personal_brain.utils.text import keyword_tokens, overlap_score
 
 
 PAGE_TYPE_BONUS = {
+    "process": 3.0,
+    "stage": 2.8,
+    "step": 2.7,
     "topic": 2.5,
     "principle": 2.0,
     "project": 1.5,
@@ -16,10 +19,19 @@ PAGE_TYPE_BONUS = {
 
 
 class PageRanker:
-    def rank(self, question: str, candidates: list[PageCandidate], question_type: str | None = None) -> list[RankedPage]:
+    def rank(
+        self,
+        question: str,
+        candidates: list[PageCandidate],
+        question_type: str | None = None,
+        *,
+        seed_scores: dict[str, float] | None = None,
+        retrieval_mode: str | None = None,
+    ) -> list[RankedPage]:
         ranked: list[RankedPage] = []
         for candidate in candidates:
             page = candidate.page
+            seed_score = float((seed_scores or {}).get(page.path, 0.0))
             title_score = overlap_score(question, page.title) * 3
             summary_score = overlap_score(question, page.summary) * 2
             body_score = overlap_score(question, candidate.body)
@@ -39,6 +51,7 @@ class PageRanker:
                 + intent_bonus
                 + title_keyword_bonus
                 + source_specific_bonus
+                + seed_score
             )
 
             reasons = []
@@ -58,6 +71,9 @@ class PageRanker:
                 reasons.append(f"intent:{intent_bonus:.2f}")
             if source_specific_bonus:
                 reasons.append(f"source-title:{source_specific_bonus:.2f}")
+            if seed_score:
+                mode = retrieval_mode or "seed"
+                reasons.append(f"{mode}-seed:{seed_score:.2f}")
 
             ranked.append(RankedPage(page=page, body=candidate.body, score=score, reasons=reasons))
 
@@ -81,6 +97,8 @@ class PageRanker:
             return 1.0
         if question_type == "procedural" and page_type in {"principle", "project"}:
             return 1.2
+        if question_type == "procedural" and page_type in {"process", "stage", "step"}:
+            return 1.8
         return 0.0
 
     def _title_keyword_bonus(self, question: str, title: str) -> float:

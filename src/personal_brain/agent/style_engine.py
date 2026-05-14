@@ -66,4 +66,6 @@ class StyleEngine:
     def _section_label(self, section_name: str) -> str:
         if section_name == "object_model":
             return "Object Model"
+        if section_name == "direct_answer":
+            return "直接答案"
         return section_name.replace("_", " ").title()

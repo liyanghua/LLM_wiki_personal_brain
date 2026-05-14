@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { agentTraceSchema } from "@/entities/agent-trace/schema";
 
 export const evidenceSnippetSchema = z.object({
   page_id: z.string(),
@@ -47,5 +48,32 @@ export const askResultSchema = z.object({
     .optional(),
   method_profile_id: z.string(),
   template_id: z.string(),
+  retrieval_backend: z.string().nullish(),
+  retrieval_mode: z.string().nullish(),
+  retrieval_collection: z.string().nullish(),
+  retrieval_explain: z.array(z.string()).nullish(),
+  process_context: z
+    .object({
+      current_stage: z.string().nullish(),
+      current_step: z.string().nullish(),
+      linked_rules: z.array(z.string()).nullish(),
+      linked_cases: z.array(z.string()).nullish(),
+      linked_sources: z.array(z.string()).nullish(),
+    })
+    .nullish(),
+  answer_grounding_blocks: z
+    .array(
+      z.object({
+        label: z.string(),
+        block_type: z.string(),
+        text: z.string(),
+        refs: z.array(z.string()),
+        stage: z.string().nullish(),
+        step: z.string().nullish(),
+      }),
+    )
+    .nullish(),
+  compile_warnings: z.array(z.string()).nullish(),
+  agent_trace: agentTraceSchema.nullish(),
   created_at: z.string(),
 });

@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Expert Brain Studio：页面结构图 + Agent 协同图</title>
+  <style>
+    :root {
+      --bg: #07111f;
+      --panel: #0d1728;
+      --panel2: #101d33;
+      --line: #2f4263;
+      --text: #e8f0ff;
+      --muted: #a9b8d6;
+      --sky: #76c7ff;
+      --indigo: #9aa7ff;
+      --emerald: #80f0bf;
+      --amber: #ffd27a;
+      --rose: #ff9fba;
+      --violet: #c6a2ff;
+      --cyan: #72e7ff;
+      --fuchsia: #ff9cff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: radial-gradient(circle at top, #10203b 0%, var(--bg) 45%, #040912 100%);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      color: var(--text);
+    }
+    .wrap { padding: 20px; overflow: auto; }
+    .board {
+      width: 1700px;
+      margin: 0 auto;
+      border-radius: 26px;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+      box-shadow: 0 30px 80px rgba(0,0,0,0.38);
+      padding: 20px;
+    }
+    .head h1 { margin: 0; font-size: 34px; line-height: 1.15; }
+    .sub { color: var(--muted); font-size: 14px; line-height: 1.7; max-width: 1200px; margin-top: 10px; }
+    .pills { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+    .pill {
+      padding: 7px 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.11);
+      background: rgba(255,255,255,0.04);
+      font-size: 12px;
+      color: #dce8ff;
+    }
+    svg text { font-family: inherit; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="board">
+      <div class="head">
+        <h1>Expert Brain Studio：页面结构图 + Agent 协同图</h1>
+        <div class="sub">
+          定位：行业专家知识萃取前端。负责把专家经验通过交互式问答、共编、标注、冲突裁决与 Skill 编译，沉淀为可治理、可发布、可被下游 Agent 消费的正式资产。
+        </div>
+        <div class="pills">
+          <div class="pill">前台：问答 / 共编 / 标注 / 裁决 / Skill</div>
+          <div class="pill">中台：Knowledge Production + Governance</div>
+          <div class="pill">后台：Ontology / Skill / Eval / Audit</div>
+          <div class="pill">目标：专家知识 → 可治理资产 → 可调用能力</div>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 1660 1180" width="100%" height="auto">
+        <defs>
+          <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+            <path d="M0,0 L10,5 L0,10 z" fill="#92a6d7"></path>
+          </marker>
+          <marker id="arrowGold" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+            <path d="M0,0 L10,5 L0,10 z" fill="#ffd27a"></path>
+          </marker>
+        </defs>
+
+        <rect x="20" y="20" width="1620" height="58" rx="16" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.08)"/>
+        <text x="44" y="44" fill="#e8f0ff" font-size="18" font-weight="700">一张图看清：页面家族负责让“人能参与”，Agent 协同负责让“知识能生产”，治理中枢负责让“资产能放行”。</text>
+        <text x="44" y="65" fill="#b8c7e8" font-size="13">推荐信息架构：项目视角 + 资产视角 + 工作流视角 三线并行。</text>
+
+        <text x="20" y="114" fill="#e8f0ff" font-size="28" font-weight="800">一、页面结构图</text>
+        <text x="20" y="138" fill="#a9b8d6" font-size="13">从专家输入，到知识治理，再到下游 Agent 消费的页面家族。</text>
+
+        <g>
+          <rect x="20" y="160" width="390" height="150" rx="22" fill="#10233b" stroke="#3d6b9d"/>
+          <text x="42" y="190" fill="#76c7ff" font-size="16" font-weight="700">01 首页 / Dashboard</text>
+          <text x="42" y="215" fill="#e8f0ff" font-size="22" font-weight="800">项目状态与风险入口</text>
+          <text x="42" y="239" fill="#c9d8f7" font-size="13">看项目状态、待审核、知识资产规模、近期回流与风险。</text>
+          <text x="42" y="267" fill="#a9b8d6" font-size="12">• 项目总览  • 待办与待审核  • 最近新增资产  • 冲突与风险提醒</text>
+        </g>
+
+        <g>
+          <rect x="430" y="160" width="390" height="150" rx="22" fill="#161c40" stroke="#5a63ba"/>
+          <text x="452" y="190" fill="#9aa7ff" font-size="16" font-weight="700">02 交互式问答台</text>
+          <text x="452" y="215" fill="#e8f0ff" font-size="22" font-weight="800">递进式榨取 tacit knowledge</text>
+          <text x="452" y="239" fill="#d8dcff" font-size="13">递进式提问、反例追问、例外补充，把隐性知识榨出来。</text>
+          <text x="452" y="267" fill="#a9b8d6" font-size="12">• 对话区  • 候选知识节点区  • 待追问问题池  • Session 状态条</text>
+        </g>
+
+        <g>
+          <rect x="840" y="160" width="390" height="150" rx="22" fill="#102b29" stroke="#3f987b"/>
+          <text x="862" y="190" fill="#80f0bf" font-size="16" font-weight="700">03 共编工作台</text>
+          <text x="862" y="215" fill="#e8f0ff" font-size="22" font-weight="800">Wiki + 图谱 + Copilot 共编</text>
+          <text x="862" y="239" fill="#d8fff0" font-size="13">把原始知识整理成 wiki 页、知识节点、关系图与草稿卡。</text>
+          <text x="862" y="267" fill="#a9b8d6" font-size="12">• Wiki 编辑区  • 图谱导航  • Copilot 建议区  • Diff / 变更记录</text>
+        </g>
+
+        <g>
+          <rect x="1250" y="160" width="390" height="150" rx="22" fill="#302513" stroke="#b9944a"/>
+          <text x="1272" y="190" fill="#ffd27a" font-size="16" font-weight="700">04 标注工作台</text>
+          <text x="1272" y="215" fill="#e8f0ff" font-size="22" font-weight="800">结构化标注与复核</text>
+          <text x="1272" y="239" fill="#fff0ca" font-size="13">对节点、关系、案例、规则、证据做结构化标注。</text>
+          <text x="1272" y="267" fill="#a9b8d6" font-size="12">• 原文 / 原脑页  • 候选标签区  • 复核区  • 低置信度筛选</text>
+        </g>
+
+        <g>
+          <rect x="20" y="330" width="390" height="150" rx="22" fill="#321621" stroke="#b86484"/>
+          <text x="42" y="360" fill="#ff9fba" font-size="16" font-weight="700">05 冲突裁决台</text>
+          <text x="42" y="385" fill="#e8f0ff" font-size="22" font-weight="800">咨询委员会式共识形成</text>
+          <text x="42" y="409" fill="#ffdce5" font-size="13">多专家观点对比、讨论、形成共识或保留分歧。</text>
+          <text x="42" y="437" fill="#a9b8d6" font-size="12">• 冲突对比  • Council 讨论流  • 共识区  • 升级仲裁动作</text>
+        </g>
+
+        <g>
+          <rect x="430" y="330" width="390" height="150" rx="22" fill="#25163c" stroke="#8d6cc9"/>
+          <text x="452" y="360" fill="#c6a2ff" font-size="16" font-weight="700">06 Skill Studio</text>
+          <text x="452" y="385" fill="#e8f0ff" font-size="22" font-weight="800">Skill 编译与自进化</text>
+          <text x="452" y="409" fill="#efe1ff" font-size="13">把通过治理的知识资产编译成 Skill 与推理模板。</text>
+          <text x="452" y="437" fill="#a9b8d6" font-size="12">• Skill 列表  • Skill 详情  • 依赖资产  • 版本对比 / 回归结果</text>
+        </g>
+
+        <g>
+          <rect x="840" y="330" width="390" height="150" rx="22" fill="#2a1432" stroke="#bf67bf"/>
+          <text x="862" y="360" fill="#ff9cff" font-size="16" font-weight="700">07 Governance Center</text>
+          <text x="862" y="385" fill="#e8f0ff" font-size="22" font-weight="800">版本、术语、审核与评测中枢</text>
+          <text x="862" y="409" fill="#ffe0ff" font-size="13">版本、术语、证据、审核发布、评测与回流中枢。</text>
+          <text x="862" y="437" fill="#a9b8d6" font-size="12">• 审核发布  • 术语字典  • 版本历史  • Eval / Audit 看板</text>
+        </g>
+
+        <g>
+          <rect x="1250" y="330" width="390" height="150" rx="22" fill="#122937" stroke="#4aa0b8"/>
+          <text x="1272" y="360" fill="#72e7ff" font-size="16" font-weight="700">08 Agent 消费工作台</text>
+          <text x="1272" y="385" fill="#e8f0ff" font-size="22" font-weight="800">下游业务 Agent 消费端</text>
+          <text x="1272" y="409" fill="#d5fbff" font-size="13">下游 Agent 或业务用户消费已发布知识与 Skill。</text>
+          <text x="1272" y="437" fill="#a9b8d6" font-size="12">• 任务输入  • 证据引用  • 建议输出  • 反馈回流</text>
+        </g>
+
+        <line x1="20" y1="520" x2="1640" y2="520" stroke="rgba(255,255,255,0.12)" stroke-width="1.5"/>
+
+        <text x="20" y="570" fill="#e8f0ff" font-size="28" font-weight="800">二、Agent 协同图</text>
+        <text x="20" y="594" fill="#a9b8d6" font-size="13">五个 Agent 不是并列烟囱，而是一条知识生产线；Governance Center 横向约束全流程。</text>
+
+        <g>
+          <rect x="20" y="620" width="980" height="102" rx="22" fill="#161c40" stroke="#5a63ba"/>
+          <text x="48" y="654" fill="#9aa7ff" font-size="17" font-weight="700">A1 交互式问答 Agent</text>
+          <text x="48" y="682" fill="#e8f0ff" font-size="22" font-weight="800">递进式提问，抽取候选概念、规则、案例、边界</text>
+          <text x="48" y="706" fill="#cfd5ff" font-size="13">输入：专家表达 / 文档 / 会话上下文 ｜ 输出：Candidate Knowledge</text>
+        </g>
+        <line x1="510" y1="722" x2="510" y2="744" stroke="#7086b8" stroke-width="3" marker-end="url(#arrow)"/>
+
+        <g>
+          <rect x="20" y="744" width="980" height="102" rx="22" fill="#102b29" stroke="#3f987b"/>
+          <text x="48" y="778" fill="#80f0bf" font-size="17" font-weight="700">A2 共编 Copilot Agent</text>
+          <text x="48" y="806" fill="#e8f0ff" font-size="22" font-weight="800">把候选知识整理成 Brain Pages、Nodes、Edges 与草稿卡</text>
+          <text x="48" y="830" fill="#d8fff0" font-size="13">输入：Candidate Knowledge ｜ 输出：Brain Pages / Draft Cards</text>
+        </g>
+        <line x1="510" y1="846" x2="510" y2="868" stroke="#7086b8" stroke-width="3" marker-end="url(#arrow)"/>
+
+        <g>
+          <rect x="20" y="868" width="980" height="102" rx="22" fill="#302513" stroke="#b9944a"/>
+          <text x="48" y="902" fill="#ffd27a" font-size="17" font-weight="700">A3 标注 Agent</text>
+          <text x="48" y="930" fill="#e8f0ff" font-size="22" font-weight="800">给节点、关系、案例、证据打结构化标签并分配复核任务</text>
+          <text x="48" y="954" fill="#fff0ca" font-size="13">输入：Pages / Nodes / Cases ｜ 输出：Labeled Assets</text>
+        </g>
+        <line x1="510" y1="970" x2="510" y2="992" stroke="#7086b8" stroke-width="3" marker-end="url(#arrow)"/>
+
+        <g>
+          <rect x="20" y="992" width="980" height="102" rx="22" fill="#321621" stroke="#b86484"/>
+          <text x="48" y="1026" fill="#ff9fba" font-size="17" font-weight="700">A4 冲突裁决 Agent Council</text>
+          <text x="48" y="1054" fill="#e8f0ff" font-size="22" font-weight="800">对高冲突内容进行多视角讨论，形成共识或保留分歧</text>
+          <text x="48" y="1078" fill="#ffdce5" font-size="13">输入：Conflicting Assets ｜ 输出：Consensus / Minority Opinion</text>
+        </g>
+        <line x1="510" y1="1094" x2="510" y2="1116" stroke="#7086b8" stroke-width="3" marker-end="url(#arrow)"/>
+
+        <g>
+          <rect x="20" y="1116" width="980" height="44" rx="22" fill="#25163c" stroke="#8d6cc9"/>
+          <text x="48" y="1145" fill="#c6a2ff" font-size="17" font-weight="700">A5 Skill Creator + 自进化 Agent：编译 SkillSpec、推理模板、校验策略，并根据反馈持续优化</text>
+        </g>
+
+        <g>
+          <rect x="1030" y="620" width="610" height="260" rx="24" fill="#2a1432" stroke="#bf67bf"/>
+          <text x="1060" y="656" fill="#ff9cff" font-size="20" font-weight="800">Governance Center</text>
+          <text x="1060" y="682" fill="#ffe0ff" font-size="14">横向作用于全部 Agent：术语治理、版本管理、审核发布、证据追踪、评测回流、审计记录</text>
+          <text x="1060" y="720" fill="#f6e9ff" font-size="14">• Semantic Dictionary</text>
+          <text x="1060" y="746" fill="#f6e9ff" font-size="14">• Approval Workflow</text>
+          <text x="1060" y="772" fill="#f6e9ff" font-size="14">• Version History</text>
+          <text x="1060" y="798" fill="#f6e9ff" font-size="14">• Evidence / Provenance</text>
+          <text x="1060" y="824" fill="#f6e9ff" font-size="14">• Eval & Audit</text>
+          <text x="1060" y="850" fill="#f6e9ff" font-size="14">• Feedback Loop</text>
+        </g>
+
+        <g>
+          <rect x="1030" y="900" width="610" height="260" rx="24" fill="#122937" stroke="#4aa0b8"/>
+          <text x="1060" y="936" fill="#72e7ff" font-size="20" font-weight="800">下游消费端</text>
+          <text x="1060" y="962" fill="#d5fbff" font-size="14">已发布 Skill 与知识资产进入业务 Agent、工作台、评测系统与客户项目空间</text>
+          <text x="1060" y="1000" fill="#e4fdff" font-size="14">• 商品诊断 Agent</text>
+          <text x="1060" y="1026" fill="#e4fdff" font-size="14">• 内容策划 Agent</text>
+          <text x="1060" y="1052" fill="#e4fdff" font-size="14">• 广告优化 Agent</text>
+          <text x="1060" y="1078" fill="#e4fdff" font-size="14">• 研究 / 洞察 Agent</text>
+          <text x="1060" y="1104" fill="#e4fdff" font-size="14">• 客户项目工作台</text>
+        </g>
+
+        <line x1="1000" y1="672" x2="1030" y2="672" stroke="#ff9cff" stroke-width="3" marker-end="url(#arrow)"/>
+        <line x1="1000" y1="796" x2="1030" y2="796" stroke="#ff9cff" stroke-width="3" marker-end="url(#arrow)"/>
+        <line x1="1000" y1="920" x2="1030" y2="820" stroke="#ff9cff" stroke-width="3" marker-end="url(#arrow)"/>
+        <line x1="1000" y1="1044" x2="1030" y2="844" stroke="#ff9cff" stroke-width="3" marker-end="url(#arrow)"/>
+        <line x1="1000" y1="1138" x2="1030" y2="1138" stroke="#ffd27a" stroke-width="3" marker-end="url(#arrowGold)"/>
+      </svg>
+
+      <svg viewBox="0 0 1660 210" width="100%" height="auto" style="margin-top:10px;">
+        <defs>
+          <marker id="arrow2" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+            <path d="M0,0 L10,5 L0,10 z" fill="#92a6d7"></path>
+          </marker>
+        </defs>
+        <rect x="20" y="20" width="1620" height="170" rx="24" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.08)"/>
+        <text x="42" y="54" fill="#e8f0ff" font-size="26" font-weight="800">三、核心资产流</text>
+        <text x="42" y="78" fill="#a9b8d6" font-size="13">系统真正的价值，不是会话本身，而是沿链路逐步形成的正式资产。</text>
+
+        <g>
+          <rect x="42" y="98" width="145" height="64" rx="18" fill="#1a2240" stroke="#5362b0"/>
+          <text x="58" y="122" fill="#cdd6ff" font-size="11">Step 1</text>
+          <text x="58" y="145" fill="#ffffff" font-size="16" font-weight="700">Interview Session</text>
+          <line x1="187" y1="130" x2="212" y2="130" stroke="#8ea1d3" stroke-width="3" marker-end="url(#arrow2)"/>
+
+          <rect x="222" y="98" width="155" height="64" rx="18" fill="#122a2a" stroke="#44927b"/>
+          <text x="238" y="122" fill="#c7fff0" font-size="11">Step 2</text>
+          <text x="238" y="145" fill="#ffffff" font-size="16" font-weight="700">Candidate Knowledge</text>
+          <line x1="377" y1="130" x2="402" y2="130" stroke="#8ea1d3" stroke-width="3" marker-end="url(#arrow2)"/>
+
+          <rect x="412" y="98" width="135" height="64" rx="18" fill="#13203b" stroke="#467aa7"/>
+          <text x="428" y="122" fill="#d7eeff" font-size="11">Step 3</text>
+          <text x="428" y="145" fill="#ffffff" font-size="16" font-weight="700">Brain Pages</text>
+          <line x1="547" y1="130" x2="572" y2="130" stroke="#8ea1d3" stroke-width="3" marker-end="url(#arrow2)"/>
+
+          <rect x="582" y="98" width="190" height="64" rx="18" fill="#122a2a" stroke="#44927b"/>
+          <text x="598" y="122" fill="#c7fff0" font-size="11">Step 4</text>
+          <text x="598" y="145" fill="#ffffff" font-size="16" font-weight="700">Knowledge Nodes / Edges</text>
+          <line x1="772" y1="130" x2="797" y2="130" stroke="#8ea1d3" stroke-width="3" marker-end="url(#arrow2)"/>
+
+          <rect x="807" y="98" width="150" height="64" rx="18" fill="#302513" stroke="#b9944a"/>
+          <text x="823" y="122" fill="#fff0ca" font-size="11">Step 5</text>
+          <text x="823" y="145" fill="#ffffff" font-size="16" font-weight="700">Labeled Assets</text>
+          <line x1="957" y1="130" x2="982" y2="130" stroke="#8ea1d3" stroke-width="3" marker-end="url(#arrow2)"/>
+
+          <rect x="992" y="98" width="160" height="64" rx="18" fill="#321621" stroke="#b86484"/>
+          <text x="1008" y="122" fill="#ffdce5" font-size="11">Step 6</text>
+          <text x="1008" y="145" fill="#ffffff" font-size="16" font-weight="700">Conflict Decisions</text>
+          <line x1="1152" y1="130" x2="1177" y2="130" stroke="#8ea1d3" stroke-width="3" marker-end="url(#arrow2)"/>
+
+          <rect x="1187" y="98" width="150" height="64" rx="18" fill="#2a1432" stroke="#bf67bf"/>
+          <text x="1203" y="122" fill="#ffe0ff" font-size="11">Step 7</text>
+          <text x="1203" y="145" fill="#ffffff" font-size="16" font-weight="700">Approved Assets</text>
+          <line x1="1337" y1="130" x2="1362" y2="130" stroke="#8ea1d3" stroke-width="3" marker-end="url(#arrow2)"/>
+
+          <rect x="1372" y="98" width="248" height="64" rx="18" fill="#122937" stroke="#4aa0b8"/>
+          <text x="1388" y="122" fill="#d5fbff" font-size="11">Step 8–10</text>
+          <text x="1388" y="145" fill="#ffffff" font-size="16" font-weight="700">SkillSpec → Agent Outputs → Feedback</text>
+        </g>
+      </svg>
+    </div>
+  </div>
+</body>
+</html>

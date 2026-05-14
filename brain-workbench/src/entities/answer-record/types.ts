@@ -1,3 +1,5 @@
+import type { AgentTraceBundleEntity } from "@/entities/agent-trace/types";
+
 export interface EvidenceSnippet {
   page_id: string;
   page_title: string;
@@ -41,5 +43,26 @@ export interface AskResultEntity {
   };
   method_profile_id: string;
   template_id: string;
+  retrieval_backend: string;
+  retrieval_mode: string;
+  retrieval_collection: string;
+  retrieval_explain: string[];
+  process_context: {
+    current_stage: string;
+    current_step: string;
+    linked_rules: string[];
+    linked_cases: string[];
+    linked_sources: string[];
+  };
+  answer_grounding_blocks: Array<{
+    label: string;
+    block_type: string;
+    text: string;
+    refs: string[];
+    stage: string;
+    step: string;
+  }>;
+  compile_warnings: string[];
+  agent_trace: AgentTraceBundleEntity;
   created_at: string;
 }

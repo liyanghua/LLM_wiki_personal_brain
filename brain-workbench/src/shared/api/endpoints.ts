@@ -5,6 +5,8 @@ export const ENDPOINTS = {
     `/api/extraction/interviews/${encodeURIComponent(interviewId)}`,
   extractionTurn: (interviewId: string) =>
     `/api/extraction/interviews/${encodeURIComponent(interviewId)}/turns`,
+  extractionAsset: (interviewId: string, assetId: string) =>
+    `/api/extraction/interviews/${encodeURIComponent(interviewId)}/assets/${encodeURIComponent(assetId)}`,
   extractionFinish: (interviewId: string) =>
     `/api/extraction/interviews/${encodeURIComponent(interviewId)}/finish`,
   memoryRecent: "/api/memory/recent",

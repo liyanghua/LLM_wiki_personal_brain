@@ -1,7 +1,11 @@
 import { computed, onMounted } from "vue";
 import { storeToRefs } from "pinia";
 import type { AskMode } from "@/app/stores/query.store";
-import type { ExtractionInterviewStateEntity } from "@/entities/extraction-interview/types";
+import type {
+  CandidateAssetEntity,
+  ExtractionInterviewStateEntity,
+  InterviewSessionEntity,
+} from "@/entities/extraction-interview/types";
 import { useQueryStore } from "@/app/stores/query.store";
 import { useUiStore } from "@/app/stores/ui.store";
 import { answerSectionsFromMarkdown } from "./mapper";
@@ -11,6 +15,7 @@ import {
   finishExtractionInterview,
   getExtractionInterview,
   startExtractionInterview,
+  updateExtractionCandidateAsset,
 } from "./api";
 import { resolvePinia } from "@/shared/lib/guards";
 import { loadRecentMemory } from "@/features/memory/api";
@@ -40,6 +45,7 @@ export function useAskWorkspace() {
     error,
     followupAnswerDraft,
     selectedCandidateQuestion,
+    extractionSessionDraft,
   } = storeToRefs(queryStore);
 
   const quickSections = computed(() => answerSectionsFromMarkdown(quickResult.value));
@@ -74,6 +80,13 @@ export function useAskWorkspace() {
 
   function applyExtractionState(nextState: ExtractionInterviewStateEntity) {
     queryStore.extractionState = nextState;
+    queryStore.extractionSessionDraft = {
+      title: nextState.session.title,
+      topic_type: nextState.session.topic_type,
+      target_object: nextState.session.target_object,
+      goal: nextState.session.goal,
+      created_by: nextState.session.created_by,
+    };
     const candidates = nextState.next_question_plan.candidate_questions;
 
     if (candidates.length === 0) {
@@ -130,18 +143,25 @@ export function useAskWorkspace() {
     }, "分析请求失败");
   }
 
-  async function startExtraction(question = questionDraft.value) {
+  async function startExtraction(
+    question = questionDraft.value,
+    sessionDraft?: Partial<Pick<InterviewSessionEntity, "title" | "topic_type" | "target_object" | "goal" | "created_by">>,
+  ) {
     const normalizedQuestion = question.trim();
-    if (!normalizedQuestion) {
-      queryStore.error = "请输入问题";
+    const normalizedGoal = (sessionDraft?.goal ?? extractionSessionDraft.value.goal ?? "").trim();
+    if (!normalizedQuestion && !normalizedGoal) {
+      queryStore.error = "请输入主题或目标";
       return;
     }
 
     queryStore.mode = "extraction";
-    queryStore.questionDraft = normalizedQuestion;
+    queryStore.questionDraft = normalizedQuestion || normalizedGoal;
 
     await runRequest(async () => {
-      const started = await startExtractionInterview(normalizedQuestion);
+      const started = await startExtractionInterview(
+        normalizedQuestion || normalizedGoal,
+        sessionDraft ?? extractionSessionDraft.value,
+      );
       applyExtractionState(started);
       queryStore.followupAnswerDraft = "";
       syncUrl("extraction", started.interview_id);
@@ -158,18 +178,53 @@ export function useAskWorkspace() {
     }
 
     if (!normalizedAnswer) {
-      queryStore.error = "请输入补充回答";
+      queryStore.error = "请输入你的回答";
       return;
     }
 
     queryStore.followupAnswerDraft = normalizedAnswer;
 
     await runRequest(async () => {
-      const continued = await continueExtractionInterview(interviewId, normalizedAnswer);
+      const continued = await continueExtractionInterview(interviewId, {
+        turn_action: "answer",
+        user_answer: normalizedAnswer,
+      });
       applyExtractionState(continued);
       queryStore.followupAnswerDraft = "";
       syncUrl("extraction", interviewId);
     }, "继续采掘失败");
+  }
+
+  async function skipExtraction() {
+    const interviewId = extractionState.value?.interview_id;
+    if (!interviewId) {
+      queryStore.error = "请先开始采掘";
+      return;
+    }
+
+    await runRequest(async () => {
+      const continued = await continueExtractionInterview(interviewId, {
+        turn_action: "skip",
+      });
+      applyExtractionState(continued);
+      syncUrl("extraction", interviewId);
+    }, "继续采掘失败");
+  }
+
+  async function summarizeExtraction() {
+    const interviewId = extractionState.value?.interview_id;
+    if (!interviewId) {
+      queryStore.error = "请先开始采掘";
+      return;
+    }
+
+    await runRequest(async () => {
+      const continued = await continueExtractionInterview(interviewId, {
+        turn_action: "summarize",
+      });
+      applyExtractionState(continued);
+      syncUrl("extraction", interviewId);
+    }, "总结采掘失败");
   }
 
   async function finishExtraction() {
@@ -186,6 +241,23 @@ export function useAskWorkspace() {
     }, "结束采掘失败");
   }
 
+  async function updateCandidateAsset(
+    assetId: string,
+    update: Partial<Pick<CandidateAssetEntity, "status" | "summary" | "expert_note">>,
+  ) {
+    const interviewId = extractionState.value?.interview_id;
+    if (!interviewId) {
+      queryStore.error = "请先开始采掘";
+      return;
+    }
+
+    await runRequest(async () => {
+      const updated = await updateExtractionCandidateAsset(interviewId, assetId, update);
+      applyExtractionState(updated);
+      syncUrl("extraction", interviewId);
+    }, "更新候选资产失败");
+  }
+
   function switchMode(nextMode: AskMode) {
     queryStore.mode = nextMode;
     queryStore.error = "";
@@ -195,6 +267,13 @@ export function useAskWorkspace() {
   function resetExtraction() {
     queryStore.mode = "extraction";
     queryStore.extractionState = null;
+    queryStore.extractionSessionDraft = {
+      title: "",
+      topic_type: "topic",
+      target_object: "",
+      goal: "",
+      created_by: "expert",
+    };
     queryStore.followupAnswerDraft = "";
     queryStore.selectedCandidateQuestion = "";
     queryStore.error = "";
@@ -219,6 +298,7 @@ export function useAskWorkspace() {
     questionDraft,
     quickResult,
     extractionState,
+    extractionSessionDraft,
     recentMemory,
     quickSections,
     extractionSections,
@@ -232,7 +312,10 @@ export function useAskWorkspace() {
     submitQuick,
     startExtraction,
     continueExtraction,
+    skipExtraction,
+    summarizeExtraction,
     finishExtraction,
+    updateCandidateAsset,
     switchMode,
     resetExtraction,
     selectCandidateQuestion,

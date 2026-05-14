@@ -42,7 +42,10 @@ describe("query api", () => {
   it("hits all extraction endpoints with the correct payloads", async () => {
     await startExtractionInterview("什么是品牌经营OS？");
     await getExtractionInterview("extract-001");
-    await continueExtractionInterview("extract-001", "它是一套长期经营框架。");
+    await continueExtractionInterview("extract-001", {
+      turn_action: "answer",
+      user_answer: "它是一套长期经营框架。",
+    });
     await finishExtractionInterview("extract-001");
 
     expect(apiClient.post).toHaveBeenNthCalledWith(1, ENDPOINTS.extractionStart, {
@@ -50,6 +53,7 @@ describe("query api", () => {
     });
     expect(apiClient.get).toHaveBeenCalledWith(ENDPOINTS.extractionDetail("extract-001"));
     expect(apiClient.post).toHaveBeenNthCalledWith(2, ENDPOINTS.extractionTurn("extract-001"), {
+      turn_action: "answer",
       user_answer: "它是一套长期经营框架。",
     });
     expect(apiClient.post).toHaveBeenNthCalledWith(3, ENDPOINTS.extractionFinish("extract-001"));

@@ -1,326 +1,531 @@
 <template>
   <div class="page-shell">
     <AskWorkspaceHeader :mode="mode" @switch-mode="switchMode" />
-    <div class="workbench-grid workbench-grid--wide">
-      <AskWorkspaceSidebar
-        :recent-queries="recentMemory.recent_queries"
-        :topics="recentMemory.persistent_interests"
-      />
-      <section class="page-card stack">
-        <template v-if="mode === 'quick'">
-          <div class="action-row">
-            <n-input
-              v-model:value="questionDraft"
-              type="textarea"
-              :autosize="{ minRows: 2, maxRows: 4 }"
-              placeholder="输入要分析的问题…"
-            />
-            <n-button type="primary" :loading="loading" @click="submitQuick(questionDraft)">
-              快速分析
-            </n-button>
+
+    <section v-if="!extractionState" class="page-card stack agent-launch">
+      <div class="agent-launch__intro">
+        <p class="eyebrow">AI-native Interview</p>
+        <h2>围绕一个主题，开始知识榨取</h2>
+        <p>只需要告诉 Agent 主题和目标，它会主动推进提问、实时抽取结构化理解，并在合适的时候帮你收束。</p>
+      </div>
+      <div class="agent-launch__grid">
+        <n-input v-model:value="launchTopic" placeholder="主题" />
+        <n-input v-model:value="launchGoal" placeholder="目标" />
+      </div>
+      <div class="agent-launch__grid">
+        <n-input v-model:value="launchStage" placeholder="可选：所属阶段" />
+        <n-input v-model:value="launchStep" placeholder="可选：所属步骤" />
+      </div>
+      <div class="action-row">
+        <n-button type="primary" :loading="loading" @click="startAgentSession">开始访谈</n-button>
+      </div>
+      <StatePanel :loading="loading" loading-text="Agent 正在准备首轮问题…" :error="error" :empty="false" />
+    </section>
+
+    <section v-else class="page-card stack single-agent-shell">
+      <header class="single-agent-shell__header">
+        <div class="stack">
+          <div class="action-row action-row--tight">
+            <span class="chip">{{ extractionState.interview_view.phase_label }}</span>
+            <span class="chip">{{ extractionState.interview_view.prompt_type_label }}</span>
+            <span v-if="extractionState.current_stage" class="chip">{{ extractionState.current_stage }}</span>
+            <span v-if="extractionState.current_step" class="chip">{{ extractionState.current_step }}</span>
           </div>
-          <StatePanel
-            :loading="loading"
-            loading-text="正在分析…"
-            :error="error"
-            :empty="!quickResult.query_id && !loading"
-          >
-            <template #default>
-              <AnswerCard :sections="quickSections" />
-              <CitationList :citations="quickResult.ranked_pages" />
-            </template>
-          </StatePanel>
-        </template>
-        <template v-else>
-          <div class="action-row">
-            <n-input
-              v-model:value="questionDraft"
-              type="textarea"
-              :autosize="{ minRows: 2, maxRows: 4 }"
-              placeholder="输入根问题，启动交互式采掘…"
-            />
-            <n-button type="primary" :loading="loading" @click="startExtraction(questionDraft)">
-              开始采掘
-            </n-button>
-            <n-button v-if="extractionState" secondary @click="resetExtraction">开始新的采掘</n-button>
-          </div>
-          <StatePanel
-            :loading="loading"
-            loading-text="正在推进采掘…"
-            :error="error"
-            :empty="!extractionState?.interview_id && !loading"
-            empty-text="输入一个问题后，系统会先给出当前答案，再推荐下一轮最值得问的问题。"
-          >
-            <template #default>
-              <section class="widget-card">
-                <h3>当前采掘对象</h3>
-                <p class="highlight-copy">{{ extractionState?.current_object || "待识别" }}</p>
-                <h3>当前知识目标</h3>
-                <p>{{ extractionState?.current_knowledge_goal || "待明确" }}</p>
-                <div class="chip-row">
-                  <span class="chip">status: {{ extractionState?.status || "draft" }}</span>
-                  <span class="chip">turn: {{ extractionState?.turn_index ?? 0 }}</span>
-                  <span class="chip">
-                    projected: {{ extractionState?.staged_writeback?.projected_writeback_level || "session-level" }}
-                  </span>
-                </div>
-              </section>
+          <h2>{{ extractionState.session.title || extractionState.current_object || "交互式问答 Agent" }}</h2>
+          <p class="single-agent-shell__meta">
+            自动保存：{{ extractionState.autosave_state.status }}
+            <span v-if="extractionState.autosave_state.updated_at"> · {{ extractionState.autosave_state.updated_at }}</span>
+          </p>
+          <p class="single-agent-shell__meta">
+            当前知识底座：{{ extractionState.process_context.anchor_bundle_id || "未锚定" }}
+            <span v-if="extractionState.process_context.anchor_bundle_id === 'sop_mainline_001'"> · 主干链路SOP</span>
+          </p>
+          <p v-if="extractionState.degraded_retrieval_mode.active" class="agent-warning">
+            已降级到基础检索：{{ extractionState.degraded_retrieval_mode.reason || "当前未使用 qmd 检索结果。" }}
+          </p>
+        </div>
+        <div class="action-row">
+          <n-button secondary @click="toggleDiagnostics">
+            {{ showDiagnostics ? "收起诊断" : "查看诊断" }}
+          </n-button>
+          <n-button secondary @click="toggleStructureDrawer">
+            {{ showStructureDrawer ? "收起结构" : "展开查看" }}
+          </n-button>
+          <n-button secondary :loading="loading" @click="summarizeExtraction">先总结一下</n-button>
+          <n-button secondary :loading="loading" @click="finishExtraction">结束</n-button>
+        </div>
+      </header>
 
-              <section class="slot-grid">
-                <section class="widget-card">
-                  <h3>已知槽位</h3>
-                  <div v-if="knownSlotItems.length === 0" class="empty-state">暂无已知槽位</div>
-                  <div v-for="item in knownSlotItems" :key="item.key" class="list-card">
-                    <strong>{{ item.key }}</strong>
-                    <p>{{ item.value }}</p>
-                  </div>
-                </section>
-                <section class="widget-card">
-                  <h3>缺失槽位</h3>
-                  <div class="chip-row">
-                    <span v-if="missingSlots.length === 0" class="empty-state">缺失槽位已收敛</span>
-                    <span v-for="slot in missingSlots" :key="slot" class="chip">{{ slot }}</span>
-                  </div>
-                </section>
-              </section>
-
-              <AnswerCard :sections="extractionSections" />
-
-              <section class="widget-card">
-                <div class="section-heading">
-                  <h3>下一轮候选问题</h3>
-                  <span class="chip">{{ extractionState?.next_question_plan.next_question_type || "pending" }}</span>
-                </div>
-                <p class="prompt-preview">{{ currentPrompt }}</p>
-                <div class="candidate-list">
-                  <button
-                    v-for="question in candidateQuestions"
-                    :key="question"
-                    type="button"
-                    class="candidate-button"
-                    :class="{ 'candidate-button--active': question === currentPrompt }"
-                    @click="selectCandidateQuestion(question)"
-                  >
-                    {{ question }}
-                  </button>
-                </div>
-                <KeyValueList
-                  :items="[
-                    { key: '目标缺槽', value: targetMissingSlotsText },
-                    { key: 'stop if', value: stopIfText },
-                  ]"
-                />
-              </section>
-
-              <section v-if="!isExtractionCompleted" class="widget-card">
-                <h3>回答当前追问</h3>
-                <n-input
-                  v-model:value="followupAnswerDraft"
-                  type="textarea"
-                  :autosize="{ minRows: 3, maxRows: 6 }"
-                  :placeholder="currentPrompt || '补充你的回答…'"
-                />
-                <div class="action-row action-row--tight">
-                  <n-button type="primary" :loading="loading" @click="continueExtraction(followupAnswerDraft)">
-                    继续采掘
-                  </n-button>
-                  <n-button secondary :loading="loading" @click="finishExtraction">结束并查看沉淀</n-button>
-                </div>
-              </section>
-
-              <section v-else class="widget-card completed-card">
-                <h3>采掘已完成</h3>
-                <p>
-                  当前会话已进入只读完成态，你现在可以查看 staged writeback，或点击“开始新的采掘”开启下一轮。
-                </p>
-                <div class="chip-row">
-                  <span class="chip">{{ extractionState?.status }}</span>
-                  <span class="chip">{{ extractionState?.staged_writeback?.projected_writeback_level }}</span>
-                </div>
-              </section>
-            </template>
-          </StatePanel>
-        </template>
-      </section>
-      <section class="page-card stack">
-        <template v-if="mode === 'quick'">
-          <h3>分析方式</h3>
-          <QueryTracePanel :question-type="currentQuestionType" :cues="currentCues" />
-          <h3>命中知识</h3>
-          <RetrievedPagesList :pages="quickResult.ranked_pages" />
-          <KeyValueList
-            :items="[
-              { key: '方法画像', value: quickResult.method_profile_id },
-              { key: '答案模板', value: quickResult.template_id },
-              { key: '待跟进', value: quickResult.recalled_memory.open_loops.join(' | ') || '无' },
-            ]"
-          />
-        </template>
-        <template v-else>
-          <h3>采掘状态</h3>
-          <KeyValueList
-            :items="[
-              { key: 'question_type', value: currentQuestionType || 'unknown' },
-              { key: 'status', value: extractionState?.status || 'draft' },
-              { key: 'stop_decision.reason', value: extractionState?.stop_decision.reason || 'continue' },
-              {
-                key: 'projected_writeback_level',
-                value: extractionState?.staged_writeback?.projected_writeback_level || 'session-level',
-              },
-            ]"
-          />
-          <section class="widget-card">
-            <h3>Retrieval Buckets</h3>
-            <KeyValueList :items="bucketStats" />
-          </section>
-          <section class="widget-card">
-            <h3>对象与模式命中</h3>
-            <div class="stack">
-              <div
-                v-for="hit in bucketHits"
-                :key="`${hit.path}-${hit.title}`"
-                class="list-card"
-              >
-                <strong>{{ hit.title }}</strong>
-                <p>{{ hit.snippet }}</p>
+      <StatePanel :loading="loading" loading-text="Agent 正在推进访谈…" :error="error" :empty="false">
+        <template #default>
+          <div class="agent-thread">
+            <article class="agent-message agent-message--assistant">
+              <div class="agent-message__meta">Agent 当前问题</div>
+              <h3>{{ extractionState.interview_view.current_prompt }}</h3>
+              <div v-if="extractionState.interview_view.recommended_followups.length > 0" class="candidate-list">
+                <button
+                  v-for="item in extractionState.interview_view.recommended_followups"
+                  :key="item"
+                  type="button"
+                  class="candidate-button"
+                  :class="{ 'candidate-button--active': item === currentPrompt }"
+                  @click="selectCandidateQuestion(item)"
+                >
+                  {{ item }}
+                </button>
               </div>
-              <div v-if="bucketHits.length === 0" class="empty-state">暂无额外命中摘要</div>
+            </article>
+
+            <article class="agent-message agent-message--assistant">
+              <div class="agent-message__meta">Agent 当前答案</div>
+              <p class="agent-message__summary">
+                {{ extractionState.current_answer_summary || "Agent 正在根据当前证据组织答案。" }}
+              </p>
+              <div class="stack answer-frame">
+                <div v-if="extractionState.interview_view.answer_frame.primary_answer" class="answer-frame__section">
+                  <div class="agent-message__meta">直接答案</div>
+                  <p>{{ extractionState.interview_view.answer_frame.primary_answer }}</p>
+                </div>
+                <div v-if="extractionState.interview_view.answer_frame.mainline_steps.length > 0" class="answer-frame__section">
+                  <div class="agent-message__meta">主链路步骤</div>
+                  <ol class="answer-frame__list">
+                    <li v-for="step in extractionState.interview_view.answer_frame.mainline_steps" :key="step">{{ step }}</li>
+                  </ol>
+                </div>
+                <div v-if="extractionState.interview_view.answer_frame.key_judgements.length > 0" class="answer-frame__section">
+                  <div class="agent-message__meta">关键判断</div>
+                  <ul class="answer-frame__list">
+                    <li
+                      v-for="judgement in extractionState.interview_view.answer_frame.key_judgements"
+                      :key="judgement"
+                    >
+                      {{ judgement }}
+                    </li>
+                  </ul>
+                </div>
+                <div v-if="extractionState.interview_view.answer_frame.evidence_refs.length > 0" class="answer-frame__section">
+                  <div class="agent-message__meta">依据</div>
+                  <p class="asset-note">{{ extractionState.interview_view.answer_frame.evidence_refs.join(" | ") }}</p>
+                </div>
+              </div>
+              <AnswerCard v-if="extractionSections.length > 0" :sections="extractionSections" />
+            </article>
+
+            <article v-if="extractionGroundingBlocks.length > 0" class="agent-message agent-message--evidence">
+              <div class="agent-message__meta">答案依据</div>
+              <article
+                v-for="block in extractionGroundingBlocks"
+                :key="`${block.label}-${block.text}`"
+                class="grounding-card"
+              >
+                <div class="action-row action-row--tight">
+                  <strong>{{ block.label }}</strong>
+                  <div class="chip-row">
+                    <span v-if="block.stage" class="chip">{{ block.stage }}</span>
+                    <span v-if="block.step" class="chip">{{ block.step }}</span>
+                  </div>
+                </div>
+                <p>{{ block.text }}</p>
+                <p v-if="block.refs.length > 0" class="asset-note">refs: {{ block.refs.join(" | ") }}</p>
+              </article>
+            </article>
+
+            <article v-if="isExtractionCompleted" class="agent-message agent-message--success">
+              <div class="agent-message__meta">Session Summary</div>
+              <h3>采掘已完成</h3>
+              <p>{{ extractionState.session_summary.summary_text }}</p>
+              <div class="action-row action-row--tight">
+                <n-button secondary @click="resetExtraction">继续补充</n-button>
+              </div>
+            </article>
+          </div>
+
+          <section class="agent-composer">
+            <div class="agent-composer__header">
+              <div>
+                <h3>继续对话</h3>
+                <p>{{ extractionState.interview_view.current_prompt }}</p>
+              </div>
+            </div>
+            <n-input
+              v-model:value="agentComposerDraft"
+              type="textarea"
+              :autosize="{ minRows: 3, maxRows: 6 }"
+              :placeholder="agentComposerPlaceholder"
+              :disabled="loading || isExtractionCompleted"
+            />
+            <div class="action-row">
+              <n-button type="primary" :loading="loading" :disabled="isExtractionCompleted" @click="submitAgentTurn">
+                回答并继续
+              </n-button>
+              <n-button
+                secondary
+                :loading="loading"
+                :disabled="loading || isExtractionCompleted || !extractionState.interview_view.can_skip"
+                @click="skipExtraction"
+              >
+                跳过这个问题
+              </n-button>
+              <n-button
+                secondary
+                :loading="loading"
+                :disabled="loading || !extractionState.interview_view.can_summarize"
+                @click="summarizeExtraction"
+              >
+                先总结一下
+              </n-button>
             </div>
           </section>
-          <RetrievedPagesList :pages="extractionRankedPages" />
+
+          <section class="structure-bar">
+            <div class="structure-bar__stats">
+              <span>概念 {{ extractionState.interview_view.structure_counts.concepts }}</span>
+              <span>规则 {{ extractionState.interview_view.structure_counts.heuristics }}</span>
+              <span>案例 {{ extractionState.interview_view.structure_counts.cases }}</span>
+              <span>边界 {{ extractionState.interview_view.structure_counts.boundaries }}</span>
+            </div>
+            <button type="button" class="structure-bar__toggle" @click="toggleStructureDrawer">展开查看</button>
+          </section>
         </template>
-      </section>
-    </div>
-    <AskWorkspaceTray
-      :mode="mode"
-      :evidence="quickResult.selected_evidence"
-      :proposal-target="quickProposalTarget"
-      :content-preview="quickProposalPreview"
-      :proposal-evidence="quickProposalEvidence"
-      :retrieval-buckets="extractionState?.retrieval_buckets ?? null"
-      :staged-writeback="extractionState?.staged_writeback ?? null"
-    />
+      </StatePanel>
+    </section>
+
+    <section v-if="extractionState && showStructureDrawer" class="page-card stack overlay-panel">
+      <div class="action-row">
+        <div>
+          <p class="eyebrow">Structured Understanding</p>
+          <h3>结构抽屉</h3>
+        </div>
+        <n-button secondary @click="toggleStructureDrawer">收起结构</n-button>
+      </div>
+      <div v-if="candidateAssets.length === 0" class="empty-state">当前还没有稳定候选资产</div>
+      <article v-for="asset in candidateAssets" :key="asset.asset_id" class="list-card candidate-asset-card">
+        <div class="action-row">
+          <div>
+            <strong>{{ asset.title }}</strong>
+            <p>{{ asset.summary }}</p>
+          </div>
+          <div class="chip-row">
+            <span v-if="asset.card_group" class="chip">{{ asset.card_group }}</span>
+            <span class="chip">{{ asset.asset_type }}</span>
+            <span class="chip">{{ asset.status }}</span>
+          </div>
+        </div>
+        <p v-if="asset.stage_refs.length > 0" class="asset-note">stage: {{ asset.stage_refs.join(" | ") }}</p>
+        <p v-if="asset.step_refs.length > 0" class="asset-note">step: {{ asset.step_refs.join(" | ") }}</p>
+        <p v-if="asset.anchor_block_refs.length > 0" class="asset-note">anchor: {{ asset.anchor_block_refs.join(" | ") }}</p>
+        <div class="action-row action-row--tight">
+          <button
+            type="button"
+            class="candidate-button"
+            :data-asset-id="asset.asset_id"
+            @click="markAssetStatus(asset.asset_id, 'confirmed')"
+          >
+            确认
+          </button>
+          <button
+            type="button"
+            class="candidate-button"
+            :data-asset-id="asset.asset_id"
+            @click="markAssetStatus(asset.asset_id, 'needs_clarification')"
+          >
+            改一下
+          </button>
+          <button
+            type="button"
+            class="candidate-button"
+            :data-asset-id="asset.asset_id"
+            @click="markAssetStatus(asset.asset_id, 'rejected')"
+          >
+            不对
+          </button>
+          <button
+            type="button"
+            class="candidate-button"
+            :data-asset-id="asset.asset_id"
+            @click="markAssetStatus(asset.asset_id, 'needs_clarification')"
+          >
+            以后再说
+          </button>
+        </div>
+      </article>
+    </section>
+
+    <section v-if="extractionState && showDiagnostics" class="page-card stack overlay-panel">
+      <div class="action-row">
+        <div>
+          <p class="eyebrow">Diagnostics</p>
+          <h3>Agent Trace</h3>
+        </div>
+        <n-button secondary @click="toggleDiagnostics">收起诊断</n-button>
+      </div>
+      <AgentTracePanel
+        :trace="activeExtractionTrace"
+        :turn-options="traceTurnOptions"
+        :selected-turn="selectedTraceTurn"
+        @select-turn="selectTraceTurn"
+      />
+    </section>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref, watch } from "vue";
 import { NButton, NInput } from "naive-ui";
+import { createEmptyAgentTrace } from "@/entities/agent-trace/adapters";
 import { useAskWorkspace } from "@/features/query/useAskWorkspace";
-import KeyValueList from "@/shared/ui/KeyValueList.vue";
 import StatePanel from "@/shared/ui/StatePanel.vue";
 import AnswerCard from "@/widgets/answer/AnswerCard.vue";
-import CitationList from "@/widgets/answer/CitationList.vue";
-import QueryTracePanel from "@/widgets/answer/QueryTracePanel.vue";
-import RetrievedPagesList from "@/widgets/evidence/RetrievedPagesList.vue";
+import AgentTracePanel from "./AgentTracePanel.vue";
 import AskWorkspaceHeader from "./AskWorkspaceHeader.vue";
-import AskWorkspaceSidebar from "./AskWorkspaceSidebar.vue";
-import AskWorkspaceTray from "./AskWorkspaceTray.vue";
 
 const {
   mode,
   questionDraft,
-  quickResult,
   extractionState,
-  recentMemory,
-  quickSections,
   extractionSections,
   loading,
   error,
   followupAnswerDraft,
   selectedCandidateQuestion,
-  currentQuestionType,
-  currentCues,
-  submitQuick,
+  extractionSessionDraft,
   startExtraction,
   continueExtraction,
+  skipExtraction,
+  summarizeExtraction,
   finishExtraction,
   switchMode,
   resetExtraction,
   selectCandidateQuestion,
+  updateCandidateAsset,
 } = useAskWorkspace();
 
-const candidateQuestions = computed(() => extractionState.value?.next_question_plan.candidate_questions ?? []);
-const currentPrompt = computed(
-  () => selectedCandidateQuestion.value || candidateQuestions.value[0] || "暂无推荐追问",
-);
-const knownSlotItems = computed(() =>
-  Object.entries(extractionState.value?.known_slots ?? {}).map(([key, value]) => ({
-    key,
-    value,
-  })),
-);
-const missingSlots = computed(() => extractionState.value?.missing_slots ?? []);
-const targetMissingSlotsText = computed(
-  () => extractionState.value?.next_question_plan.target_missing_slots.join(" | ") || "无",
-);
-const stopIfText = computed(() => extractionState.value?.next_question_plan.stop_if.join(" | ") || "无");
+const launchTopic = computed({
+  get: () => extractionSessionDraft.value.target_object || extractionSessionDraft.value.title || "",
+  set: (value: string) => {
+    extractionSessionDraft.value.title = value;
+    extractionSessionDraft.value.target_object = value;
+    questionDraft.value = value;
+  },
+});
+const launchGoal = computed({
+  get: () => extractionSessionDraft.value.goal,
+  set: (value: string) => {
+    extractionSessionDraft.value.goal = value;
+  },
+});
+const launchStage = ref("");
+const launchStep = ref("");
+const showStructureDrawer = ref(false);
+const showDiagnostics = ref(false);
+const extractionGroundingBlocks = computed(() => extractionState.value?.answer_grounding_blocks ?? []);
+const candidateAssets = computed(() => extractionState.value?.candidate_assets ?? []);
 const isExtractionCompleted = computed(() => extractionState.value?.status === "completed");
-const extractionRankedPages = computed(() => extractionState.value?.retrieval_buckets.ranked_page_paths ?? []);
-const bucketStats = computed(() => [
-  {
-    key: "object_pages",
-    value: String(extractionState.value?.retrieval_buckets.object_pages.length ?? 0),
-  },
-  {
-    key: "evidence_pages",
-    value: String(extractionState.value?.retrieval_buckets.evidence_pages.length ?? 0),
-  },
-  {
-    key: "conversation_hits",
-    value: String(extractionState.value?.retrieval_buckets.conversation_hits.length ?? 0),
-  },
-  {
-    key: "pattern_hits",
-    value: String(extractionState.value?.retrieval_buckets.pattern_hits.length ?? 0),
-  },
-]);
-const bucketHits = computed(() => [
-  ...(extractionState.value?.retrieval_buckets.object_pages ?? []),
-  ...(extractionState.value?.retrieval_buckets.pattern_hits ?? []),
-]);
-const quickProposalTarget = computed(() => quickResult.value.writeback_plan?.targets[0]?.target ?? "无");
-const quickProposalPreview = computed(
-  () => quickResult.value.writeback_plan?.targets[0]?.content_preview ?? "暂无沉淀预览",
+const currentPrompt = computed(
+  () =>
+    selectedCandidateQuestion.value ||
+    extractionState.value?.interview_view.current_prompt ||
+    extractionState.value?.next_question_plan.candidate_questions?.[0] ||
+    "",
 );
-const quickProposalEvidence = computed(
-  () => quickResult.value.writeback_plan?.targets[0]?.evidence_refs ?? [],
+const agentComposerDraft = computed({
+  get: () => followupAnswerDraft.value,
+  set: (value: string) => {
+    followupAnswerDraft.value = value;
+  },
+});
+const agentComposerPlaceholder = computed(() => currentPrompt.value || "请输入你的回答…");
+const selectedTraceTurn = ref("current");
+const traceTurnOptions = computed(() => {
+  if (!extractionState.value) return [];
+  return [
+    { label: "当前轮次", value: "current" },
+    ...extractionState.value.turns.map((turn) => ({
+      label: `Turn ${turn.turn_index}`,
+      value: String(turn.turn_index),
+    })),
+  ];
+});
+const activeExtractionTrace = computed(() => {
+  const emptyTrace = createEmptyAgentTrace();
+  if (!extractionState.value) return emptyTrace;
+  if (selectedTraceTurn.value === "current") {
+    return extractionState.value.current_trace ?? emptyTrace;
+  }
+  const turn = extractionState.value.turns.find((item) => String(item.turn_index) === selectedTraceTurn.value);
+  return turn?.agent_trace ?? extractionState.value.current_trace ?? emptyTrace;
+});
+
+watch(
+  () => extractionState.value?.interview_id,
+  () => {
+    selectedTraceTurn.value = "current";
+    showStructureDrawer.value = false;
+    showDiagnostics.value = false;
+  },
 );
+
+function toggleStructureDrawer() {
+  showStructureDrawer.value = !showStructureDrawer.value;
+}
+
+function toggleDiagnostics() {
+  showDiagnostics.value = !showDiagnostics.value;
+}
+
+function selectTraceTurn(value: string) {
+  selectedTraceTurn.value = value;
+}
+
+function markAssetStatus(assetId: string, status: "confirmed" | "needs_clarification" | "rejected") {
+  void updateCandidateAsset(assetId, { status });
+}
+
+function startAgentSession() {
+  void startExtraction(launchTopic.value || questionDraft.value, {
+    title: launchTopic.value,
+    topic_type: extractionSessionDraft.value.topic_type,
+    target_object: launchTopic.value,
+    goal: launchGoal.value,
+    created_by: extractionSessionDraft.value.created_by,
+    mapped_stage: launchStage.value,
+    mapped_step: launchStep.value,
+  } as any);
+}
+
+function submitAgentTurn() {
+  if (isExtractionCompleted.value) return;
+  void continueExtraction(followupAnswerDraft.value);
+}
 </script>
 
 <style scoped>
-.slot-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+.agent-launch,
+.single-agent-shell,
+.overlay-panel {
   gap: 16px;
 }
 
-.highlight-copy {
-  font-size: 1.1rem;
-  font-weight: 600;
-  margin: 0 0 12px;
+.agent-launch__intro h2,
+.single-agent-shell__header h2 {
+  margin: 0;
 }
 
-.section-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+.agent-launch__intro p,
+.single-agent-shell__meta {
+  margin: 0;
+}
+
+.agent-launch__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
 }
 
-.prompt-preview {
-  margin: 12px 0;
-  padding: 12px 14px;
-  border-radius: 12px;
+.single-agent-shell__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.agent-warning {
+  margin: 0;
+  color: #fbbf24;
+}
+
+.agent-thread {
+  display: grid;
+  gap: 14px;
+}
+
+.agent-message {
+  display: grid;
+  gap: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 18px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.agent-message--success {
+  border-color: rgba(94, 234, 212, 0.22);
+}
+
+.agent-message__meta {
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--wb-text-muted);
+}
+
+.agent-message__summary,
+.grounding-card p,
+.candidate-asset-card p {
+  margin: 0;
+}
+
+.answer-frame {
+  gap: 10px;
+}
+
+.answer-frame__section {
+  display: grid;
+  gap: 6px;
+}
+
+.answer-frame__section p,
+.answer-frame__list {
+  margin: 0;
+}
+
+.grounding-card {
+  display: grid;
+  gap: 8px;
+  border-radius: 14px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.agent-composer {
+  display: grid;
+  gap: 12px;
+}
+
+.agent-composer__header h3,
+.agent-composer__header p {
+  margin: 0;
+}
+
+.structure-bar {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  padding: 14px 16px;
+  border-radius: 16px;
   background: rgba(255, 255, 255, 0.04);
+}
+
+.structure-bar__stats {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
   color: var(--wb-text-primary);
+}
+
+.structure-bar__toggle {
+  border: none;
+  background: transparent;
+  color: var(--wb-link);
+  cursor: pointer;
 }
 
 .candidate-list {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
-  margin-bottom: 16px;
 }
 
 .candidate-button {
@@ -330,10 +535,6 @@ const quickProposalEvidence = computed(
   background: transparent;
   color: var(--wb-text-muted);
   cursor: pointer;
-  transition:
-    border-color 0.2s ease,
-    color 0.2s ease,
-    background 0.2s ease;
 }
 
 .candidate-button--active {
@@ -342,13 +543,23 @@ const quickProposalEvidence = computed(
   color: var(--wb-text-primary);
 }
 
-.completed-card {
-  border: 1px solid rgba(94, 234, 212, 0.25);
+.candidate-asset-card {
+  display: grid;
+  gap: 10px;
 }
 
-@media (max-width: 1024px) {
-  .slot-grid {
+.asset-note {
+  color: var(--wb-text-muted);
+}
+
+@media (max-width: 900px) {
+  .agent-launch__grid {
     grid-template-columns: 1fr;
+  }
+
+  .structure-bar {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
 </style>

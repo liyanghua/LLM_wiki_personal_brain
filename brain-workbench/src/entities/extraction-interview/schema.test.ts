@@ -5,6 +5,17 @@ describe("extraction interview schema", () => {
     const payload = extractionInterviewStateSchema.parse({
       interview_id: "extract-001",
       interaction_mode: "extraction-interview",
+      session: {
+        session_id: "extract-001",
+        title: "品牌经营OS访谈",
+        topic_type: "strategy",
+        target_object: "品牌经营OS",
+        goal: "补齐稳定定义",
+        status: "in_progress",
+        created_by: "expert",
+        created_at: "2026-04-14T00:00:00Z",
+        completed_at: null,
+      },
       status: "in_progress",
       question_type: "definition",
       turn_index: 2,
@@ -61,11 +72,54 @@ describe("extraction interview schema", () => {
         asset_level: null,
         projected_writeback_level: "session-level",
       },
+      candidate_assets: [
+        {
+          asset_id: "concept-brand-os",
+          session_id: "extract-001",
+          asset_type: "concept",
+          title: "品牌经营OS",
+          summary: "一套围绕长期经营的品牌协同框架。",
+          content_json: {
+            draft_definition: "一套围绕长期经营的品牌协同框架。",
+          },
+          confidence: 0.86,
+          source_turn_ids: [1, 2],
+          evidence_refs: ["raw/industry_docs/电商运营本体核心文档.md"],
+          status: "draft",
+          expert_note: "",
+        },
+      ],
+      followup_questions: [
+        {
+          question_id: "followup-definition",
+          session_id: "extract-001",
+          question_text: "品牌经营OS的适用范围是什么？",
+          question_type: "definition",
+          reason: "范围边界仍缺失",
+          priority: "high",
+          status: "open",
+          source_asset_ids: ["concept-brand-os"],
+          target_missing_slots: ["scope"],
+        },
+      ],
+      session_summary: {
+        summary_id: "summary-extract-001",
+        session_id: "extract-001",
+        summary_text: "当前已经沉淀出品牌经营OS的初步定义。",
+        key_concepts: ["品牌经营OS"],
+        key_heuristics: [],
+        key_cases: [],
+        key_boundaries: [],
+        unresolved_items: ["scope"],
+      },
       state_path: "memory/session/extraction/2026-04-14/extract-001.json",
     });
 
     expect(payload.interview_id).toBe("extract-001");
-    expect(payload.next_question_plan.candidate_questions[0]).toContain("适用范围");
+    expect(payload.session?.title).toBe("品牌经营OS访谈");
+    expect(payload.candidate_assets?.[0]?.asset_type).toBe("concept");
+    expect(payload.followup_questions?.[0]?.priority).toBe("high");
+    expect(payload.next_question_plan?.candidate_questions?.[0]).toContain("适用范围");
   });
 
   it("rejects payloads missing required top-level fields", () => {

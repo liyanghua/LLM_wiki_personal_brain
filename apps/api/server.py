@@ -25,6 +25,16 @@ def handle_request(
             return 200, service.ask(payload)
         if method == "POST" and route == "/api/extraction/interviews":
             return 200, service.start_extraction_interview(payload)
+        if method == "POST" and "/api/extraction/interviews/" in route and "/assets/" in route:
+            prefix = "/api/extraction/interviews/"
+            suffix = route.removeprefix(prefix)
+            interview_id, _, asset_id = suffix.partition("/assets/")
+            if interview_id and asset_id:
+                return 200, service.update_extraction_candidate_asset(
+                    unquote(interview_id.rstrip("/")),
+                    unquote(asset_id.rstrip("/")),
+                    payload,
+                )
         if method == "POST" and route.startswith("/api/extraction/interviews/") and route.endswith("/finish"):
             interview_id = route.removeprefix("/api/extraction/interviews/").removesuffix("/finish").rstrip("/")
             return 200, service.finish_extraction_interview(unquote(interview_id))
@@ -69,13 +79,54 @@ def handle_request(
             identifier = route.removeprefix("/api/wiki/pages/")
             return 200, service.get_wiki_page(unquote(identifier))
     except ApiBadRequest as exc:
-        return 400, {"error": str(exc)}
+        return 400, _error_payload(str(exc), route=route, stage=_route_stage(route), diagnostic_code="bad_request")
     except ApiNotFound as exc:
-        return 404, {"error": str(exc)}
+        return 404, _error_payload(str(exc), route=route, stage=_route_stage(route), diagnostic_code="not_found")
     except FileNotFoundError as exc:
-        return 404, {"error": str(exc)}
+        return 404, _error_payload(str(exc), route=route, stage=_route_stage(route), diagnostic_code="not_found")
 
     return 404, {"error": f"route not found: {route}"}
+
+
+def _route_stage(route: str) -> str:
+    if route == "/api/extraction/interviews":
+        return "start"
+    if route.startswith("/api/extraction/interviews/") and route.endswith("/turns"):
+        return "continue"
+    if route.startswith("/api/extraction/interviews/") and route.endswith("/finish"):
+        return "finish"
+    if route.startswith("/api/extraction/interviews/") and "/assets/" in route:
+        return "candidate_update"
+    if route.startswith("/api/extraction/interviews/"):
+        return "restore"
+    if route in {"/ask", "/api/ask"}:
+        return "ask"
+    return "routing"
+
+
+def _route_interview_id(route: str) -> str:
+    prefix = "/api/extraction/interviews/"
+    if not route.startswith(prefix):
+        return ""
+    suffix = route.removeprefix(prefix)
+    interview_id = suffix.split("/", 1)[0]
+    return unquote(interview_id.rstrip("/"))
+
+
+def _error_payload(
+    error: str,
+    *,
+    route: str,
+    stage: str,
+    diagnostic_code: str,
+) -> dict:
+    return {
+        "error": error,
+        "stage": stage,
+        "recoverable": stage in {"start", "restore", "continue", "finish", "candidate_update"},
+        "interview_id": _route_interview_id(route),
+        "diagnostic_code": diagnostic_code,
+    }
 
 
 class BrainRequestHandler(BaseHTTPRequestHandler):
