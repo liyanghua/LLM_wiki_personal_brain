@@ -492,4 +492,3 @@ function scoreFile(
     images: extractImageRefs(content),
   }
 }
-
