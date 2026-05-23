@@ -3,6 +3,11 @@ import type { GroundTruthDraft, RevisionDraft } from "@/lib/agent-mode-types"
 import type { MessageReference } from "@/stores/chat-store"
 import { searchWiki, tokenizeQuery } from "@/lib/search"
 import { getRelativePath, normalizePath } from "@/lib/path-utils"
+import {
+  formatImageEvidenceForPrompt,
+  searchKnowledgeImages,
+} from "@/lib/knowledge-image-index"
+import { hasVisualQuestionIntent } from "@/lib/knowledge-image-evidence"
 
 export interface RevisionAwareSearchContext {
   projectPath: string
@@ -293,6 +298,35 @@ export async function searchKnowledgeWorkspace(
           }),
         ].join("\n\n"),
       )
+    }
+  }
+
+  if (hasVisualQuestionIntent(query)) {
+    const imageHits = await searchKnowledgeImages(pp, query, { limit: 8 }).catch((err) => {
+      console.warn("[revision-aware-search:image-index] failed", err)
+      return []
+    })
+    const imageEvidence = formatImageEvidenceForPrompt(imageHits)
+    if (imageEvidence) {
+      promptSections.push(
+        [
+          "## Image Evidence",
+          "以下图片来自项目图片证据索引。回答视觉、主图、细节、案例类问题时，必须优先使用这些 Markdown 图片；不要编造不存在的图片 URL。",
+          imageEvidence,
+        ].join("\n\n"),
+      )
+      const knownRefPaths = new Set(references.map((ref) => ref.path))
+      for (const hit of imageHits) {
+        if (knownRefPaths.has(hit.sourcePath)) continue
+        knownRefPaths.add(hit.sourcePath)
+        references.push({
+          title: hit.sourceSlug,
+          path: hit.sourcePath,
+          kind: "source",
+          cardId: input.selectedCardId ?? null,
+          blockId: hit.imageId,
+        })
+      }
     }
   }
 

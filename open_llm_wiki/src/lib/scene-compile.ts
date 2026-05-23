@@ -1,11 +1,15 @@
 import { createDirectory, readFile, writeFile } from "@/commands/fs"
 import { getFileStem, normalizePath } from "@/lib/path-utils"
+import { searchKnowledgeImages } from "@/lib/knowledge-image-index"
+import { buildTaskWikiPages } from "@/lib/task-context-pack"
+import { buildOrRefreshTaskIndex, renderTaskIndexMarkdown } from "@/lib/task-index"
 import type {
   AgentModeReport,
   CompileCoverageEntry,
   CompileCoverageReport,
   CompileIR,
   GroundTruthFieldValue,
+  KnowledgeImageEvidenceRef,
   SceneCompilePagePlan,
   SceneCompilePlan,
   ScenePack,
@@ -46,6 +50,11 @@ const PAGE_TITLE_BY_KEY = {
   evidence_cases: "证据与案例",
   source_summary: "来源摘要",
   mindmap_structure: "脑图结构",
+  task_roles: "角色与职责",
+  task_cards: "可执行任务卡",
+  task_quality: "质量与验收",
+  task_collaboration: "协同关系",
+  task_reviews: "复盘沉淀",
   hero_audiences: "人群与场景",
   hero_value_props: "卖点与表达",
   hero_creative_assets: "素材与版式",
@@ -94,6 +103,125 @@ function trimLines(value: string): string[] {
     .filter(Boolean)
 }
 
+function normalizeImageMarkdownUrl(rawUrl: string): string {
+  const url = normalizePath(rawUrl).trim()
+  if (!url) return url
+  if (/^(https?:|data:|blob:|file:|tauri:)/i.test(url)) return url
+  const wikiIndex = url.lastIndexOf("/wiki/")
+  if (wikiIndex >= 0) return url.slice(wikiIndex + "/wiki/".length)
+  if (url.startsWith("wiki/")) return url.slice("wiki/".length)
+  return url.replace(/^\.\//, "")
+}
+
+function extractMarkdownImageRefs(markdown: string): Array<{ url: string; caption: string }> {
+  const refs: Array<{ url: string; caption: string }> = []
+  const seen = new Set<string>()
+  const re = /!\[([^\]]*)\]\(([^)\s]+)\)/g
+  for (const match of markdown.matchAll(re)) {
+    const url = normalizeImageMarkdownUrl(match[2] ?? "")
+    if (!url || seen.has(url)) continue
+    seen.add(url)
+    refs.push({
+      url,
+      caption: asTrimmedString(match[1]) || `原始文档图片 ${refs.length + 1}`,
+    })
+  }
+  return refs
+}
+
+function buildImageEvidenceRefs(report: AgentModeReport): KnowledgeImageEvidenceRef[] {
+  const seen = new Set<string>()
+  const refs: KnowledgeImageEvidenceRef[] = []
+  const addRef = (input: {
+    url: string
+    caption: string
+    sourceRef: string
+    sourceAnchorId?: string | null
+    page?: number | null
+  }) => {
+    const url = normalizeImageMarkdownUrl(input.url)
+    if (!url || seen.has(url) || refs.length >= 8) return
+    seen.add(url)
+    refs.push({
+      imageId: `image-evidence-${refs.length + 1}`,
+      url,
+      caption: input.caption || `原始文档图片 ${refs.length + 1}`,
+      sourceRef: input.sourceRef,
+      sourceAnchorId: input.sourceAnchorId ?? null,
+      page: input.page ?? null,
+    })
+  }
+
+  for (const block of report.documentIr.blocks) {
+    const assetPath = asTrimmedString(block.assetPath)
+    const isImageBlock = block.blockType === "image" || block.evidenceKind === "image" || Boolean(assetPath)
+    if (!isImageBlock || !assetPath) continue
+    addRef({
+      url: assetPath,
+      caption: asTrimmedString(block.textContent),
+      sourceRef: block.sourceRefs[0] ?? report.sourcePath,
+      sourceAnchorId: block.sourceAnchorId ?? null,
+      page: block.page ?? null,
+    })
+  }
+
+  for (const image of extractMarkdownImageRefs(`${report.sourceContent}\n\n${report.analysis}`)) {
+    addRef({
+      url: image.url,
+      caption: image.caption,
+      sourceRef: report.sourcePath,
+    })
+  }
+
+  return refs
+}
+
+async function enrichImageEvidenceRefsFromIndex(
+  projectPath: string,
+  report: AgentModeReport,
+  artifacts: SceneCompileArtifacts,
+): Promise<void> {
+  if (!isHeroImageScene(report) || (artifacts.compileIr.imageEvidenceRefs?.length ?? 0) >= 4) return
+  const query = [
+    report.sourceName,
+    report.understanding.summary,
+    artifacts.compileIr.fieldValueMap.creative_assets,
+    "主图 细节图 案例 素材 版式 构图 视觉",
+  ].filter(Boolean).join(" ")
+  const hits = await searchKnowledgeImages(projectPath, query, { limit: 6 }).catch(() => [])
+  const existing = new Set((artifacts.compileIr.imageEvidenceRefs ?? []).map((item) => normalizeImageMarkdownUrl(item.url)))
+  for (const hit of hits) {
+    if (existing.has(hit.relPath) || (artifacts.compileIr.imageEvidenceRefs?.length ?? 0) >= 6) continue
+    existing.add(hit.relPath)
+    artifacts.compileIr.imageEvidenceRefs = [
+      ...(artifacts.compileIr.imageEvidenceRefs ?? []),
+      {
+        imageId: `image-index-evidence-${(artifacts.compileIr.imageEvidenceRefs?.length ?? 0) + 1}`,
+        url: hit.relPath,
+        caption: hit.caption || hit.fallbackCaption,
+        sourceRef: hit.sourcePath,
+        sourceAnchorId: null,
+        page: hit.page,
+      },
+    ]
+  }
+}
+
+function renderImageEvidenceRefs(refs: readonly KnowledgeImageEvidenceRef[]): string[] {
+  return refs.slice(0, 6).flatMap((item, index) => {
+    const label = item.caption || `原始文档图片 ${index + 1}`
+    const meta = [
+      item.page ? `页码 ${item.page}` : "",
+      item.sourceAnchorId ? `锚点 ${item.sourceAnchorId}` : "",
+      item.sourceRef ? `来源 ${item.sourceRef}` : "",
+    ].filter(Boolean).join("；")
+    return [
+      `![${label}](${item.url})`,
+      meta ? `- ${label}（${meta}）` : `- ${label}`,
+    ]
+  })
+}
+
 function normalizePageKey(value: unknown): SceneCompilePagePlan["pageKey"] | null {
   const raw = String(value ?? "").trim().toLowerCase()
   if (!raw) return null
@@ -103,8 +231,23 @@ function normalizePageKey(value: unknown): SceneCompilePagePlan["pageKey"] | nul
   if (raw === "boundaries" || raw === "boundary" || raw === "exceptions") return "boundaries"
   if (raw === "evidence_cases" || raw === "evidence" || raw === "cases" || raw === "validation") return "evidence_cases"
   if (raw === "mindmap_structure" || raw === "mindmap" || raw === "mindmap_summary") return "mindmap_structure"
+  if (raw === "task_roles" || raw === "roles" || raw === "role_system") return "task_roles"
+  if (raw === "task_cards" || raw === "tasks" || raw === "task_template") return "task_cards"
+  if (raw === "task_quality" || raw === "quality" || raw === "metrics_acceptance") return "task_quality"
+  if (raw === "task_collaboration" || raw === "collaboration" || raw === "collaboration_network") return "task_collaboration"
+  if (raw === "task_reviews" || raw === "reviews" || raw === "review_requirements") return "task_reviews"
   if (raw === "source_summary" || raw === "source") return "source_summary"
   return null
+}
+
+function inferTaskPageKey(fieldKey: string): SceneCompilePagePlan["pageKey"] {
+  if (["role_system", "owner_role", "collaborator_roles", "reviewer_role"].includes(fieldKey)) return "task_roles"
+  if (["task_trigger", "task_template", "action_breakdown", "task_object"].includes(fieldKey)) return "task_cards"
+  if (["metrics_acceptance", "quality_rules", "evaluation_criteria"].includes(fieldKey)) return "task_quality"
+  if (["collaboration_network", "dependencies", "handoff_rules"].includes(fieldKey)) return "task_collaboration"
+  if (["review_requirements", "review_rules", "boundaries_and_exceptions"].includes(fieldKey)) return "task_reviews"
+  if (["operating_goal", "operating_context"].includes(fieldKey)) return "task_cards"
+  return "task_cards"
 }
 
 function inferPageKey(fieldKey: string): SceneCompilePagePlan["pageKey"] {
@@ -142,6 +285,17 @@ function inferPageKey(fieldKey: string): SceneCompilePagePlan["pageKey"] {
 }
 
 function inferSectionKey(pageKey: SceneCompilePagePlan["pageKey"], fieldKey: string): string {
+  if (pageKey === "task_roles") return "role_system"
+  if (pageKey === "task_cards") {
+    if (fieldKey === "operating_goal") return "operating_goal"
+    if (fieldKey === "operating_context") return "operating_context"
+    if (fieldKey === "task_trigger") return "task_trigger"
+    if (fieldKey === "action_breakdown") return "action_breakdown"
+    return "task_cards"
+  }
+  if (pageKey === "task_quality") return "metrics_acceptance"
+  if (pageKey === "task_collaboration") return "collaboration_network"
+  if (pageKey === "task_reviews") return "review_requirements"
   if (pageKey === "business_index") {
     if (["business_goal", "goal", "objective", "summary"].includes(fieldKey)) return "business_goal"
     return "core_summary"
@@ -190,6 +344,21 @@ function readSceneFields(scenePack: ScenePack): SceneFieldDef[] {
   }))
 }
 
+function readSceneFieldsForReport(scenePack: ScenePack, report: AgentModeReport): SceneFieldDef[] {
+  if (!isTaskGenerationScene(report)) return readSceneFields(scenePack)
+  return readSceneFields(scenePack).map((field) => {
+    const normalized = normalizePageKey(field.pageKey)
+    const pageKey = normalized && normalized.startsWith("task_")
+      ? normalized
+      : inferTaskPageKey(field.key)
+    return {
+      ...field,
+      pageKey,
+      sectionKey: field.sectionKey || inferSectionKey(pageKey, field.key),
+    }
+  })
+}
+
 function fieldMap(report: AgentModeReport): Map<string, GroundTruthFieldValue> {
   return new Map(report.groundTruth.fields.map((field) => [field.key, field]))
 }
@@ -214,6 +383,10 @@ function sourceRefsByField(report: AgentModeReport): Record<string, string[]> {
 
 function isHeroImageScene(report: AgentModeReport): boolean {
   return report.sceneId === "ecom_growth_hero_image"
+}
+
+function isTaskGenerationScene(report: AgentModeReport): boolean {
+  return report.sceneId === "ecom_growth_task_generation"
 }
 
 function buildFieldValueMap(report: AgentModeReport): Record<string, string> {
@@ -271,6 +444,10 @@ function buildBusinessRelationMermaid(compileIr: CompileIR): string {
   return lines.join("\n")
 }
 
+function sourceRefsForFields(compileIr: CompileIR, fieldKeys: string[]): string[] {
+  return uniq(fieldKeys.flatMap((fieldKey) => compileIr.sourceRefsByField?.[fieldKey] ?? []))
+}
+
 function renderFieldProjectionSection(
   compileIr: CompileIR,
   fieldKeys: string[],
@@ -280,7 +457,7 @@ function renderFieldProjectionSection(
     if (!value) return []
     const label = compileIr.fieldLabelMap[fieldKey] || fieldKey
     const snippets = trimLines(value).slice(0, 5)
-    const evidence = compileIr.fieldEvidenceMap[fieldKey] ?? []
+    const evidence = compileIr.fieldEvidenceMap?.[fieldKey] ?? []
     return [
       `### ${label}`,
       "",
@@ -302,6 +479,7 @@ function buildCompileIr(report: AgentModeReport): CompileIR {
   )
   return {
     sourceSummary: report.understanding.summary,
+    taskContextPack: report.taskContextPack ?? null,
     mainlineSteps: report.groundTruth.mainlineSteps.length > 0
       ? report.groundTruth.mainlineSteps
       : report.understanding.mainlineSteps,
@@ -326,6 +504,7 @@ function buildCompileIr(report: AgentModeReport): CompileIR {
       ].slice(0, 12),
     ),
     imageEvidence: report.understanding.imageEvidenceHighlights,
+    imageEvidenceRefs: buildImageEvidenceRefs(report),
     metrics,
     keyEntities: report.understanding.entityCandidates,
     businessObjects: report.understanding.businessObjects,
@@ -471,13 +650,70 @@ function buildHeroImagePagePlan(docSlug: string): SceneCompilePagePlan[] {
   ]
 }
 
+function buildTaskGenerationPagePlan(docSlug: string): SceneCompilePagePlan[] {
+  return [
+    {
+      pageKey: "task_roles",
+      title: PAGE_TITLE_BY_KEY.task_roles,
+      path: `wiki/roles/${docSlug}.md`,
+      pageType: "task_roles",
+      sectionKeys: ["role_system"],
+      requiredFieldKeys: [],
+    },
+    {
+      pageKey: "task_cards",
+      title: PAGE_TITLE_BY_KEY.task_cards,
+      path: `wiki/tasks/${docSlug}.md`,
+      pageType: "task_cards",
+      sectionKeys: ["operating_goal", "operating_context", "task_trigger", "task_cards"],
+      requiredFieldKeys: [],
+    },
+    {
+      pageKey: "task_quality",
+      title: PAGE_TITLE_BY_KEY.task_quality,
+      path: `wiki/quality/${docSlug}.md`,
+      pageType: "task_quality",
+      sectionKeys: ["metrics_acceptance"],
+      requiredFieldKeys: [],
+    },
+    {
+      pageKey: "task_collaboration",
+      title: PAGE_TITLE_BY_KEY.task_collaboration,
+      path: `wiki/collaboration/${docSlug}.md`,
+      pageType: "task_collaboration",
+      sectionKeys: ["collaboration_network"],
+      requiredFieldKeys: [],
+    },
+    {
+      pageKey: "task_reviews",
+      title: PAGE_TITLE_BY_KEY.task_reviews,
+      path: `wiki/reviews/${docSlug}.md`,
+      pageType: "task_reviews",
+      sectionKeys: ["review_requirements"],
+      requiredFieldKeys: [],
+    },
+    {
+      pageKey: "source_summary",
+      title: PAGE_TITLE_BY_KEY.source_summary,
+      path: `wiki/sources/${docSlug}.md`,
+      pageType: "source_summary",
+      sectionKeys: ["source_summary"],
+      requiredFieldKeys: [],
+    },
+  ]
+}
+
 export function buildSceneCompileArtifacts(
   report: AgentModeReport,
   scenePack: ScenePack,
 ): SceneCompileArtifacts {
   const docSlug = slugifySourceName(report.sourceName) || report.docId
-  const fields = readSceneFields(scenePack)
-  const pagePlans = isHeroImageScene(report) ? buildHeroImagePagePlan(docSlug) : buildPagePlan(docSlug)
+  const fields = readSceneFieldsForReport(scenePack, report)
+  const pagePlans = isTaskGenerationScene(report)
+    ? buildTaskGenerationPagePlan(docSlug)
+    : isHeroImageScene(report)
+      ? buildHeroImagePagePlan(docSlug)
+      : buildPagePlan(docSlug)
   const pageLookup = new Map(pagePlans.map((page) => [page.pageKey, page]))
   const compileIr = buildCompileIr(report)
   const fieldLookup = fieldMap(report)
@@ -510,7 +746,7 @@ export function buildSceneCompileArtifacts(
     const pageKey = plan.fieldToPageMap[field.key] ?? null
     const page = pageKey ? pageLookup.get(pageKey as SceneCompilePagePlan["pageKey"]) ?? null : null
     const sectionKey = plan.sectionMappings[field.key] ?? null
-    const refs = compileIr.sourceRefsByField[field.key] ?? []
+    const refs = compileIr.sourceRefsByField?.[field.key] ?? []
     let rootCause: CompileCoverageEntry["rootCause"] = "written"
     if (!value) {
       rootCause = "missing_value"
@@ -587,11 +823,7 @@ function renderBusinessIndex(
   report: AgentModeReport,
   artifacts: SceneCompileArtifacts,
 ): string {
-  const refs = uniq([
-    ...artifacts.compileIr.sourceRefsByField.business_goal ?? [],
-    ...artifacts.compileIr.sourceRefsByField.mainline_steps ?? [],
-    ...artifacts.compileIr.sourceRefsByField.key_judgements ?? [],
-  ])
+  const refs = sourceRefsForFields(artifacts.compileIr, ["business_goal", "mainline_steps", "key_judgements"])
   const related = [
     `[[business/${artifacts.docSlug}/主链路步骤|主链路步骤]]`,
     `[[business/${artifacts.docSlug}/关键判断|关键判断]]`,
@@ -665,10 +897,7 @@ function renderHeroAudiences(
   report: AgentModeReport,
   artifacts: SceneCompileArtifacts,
 ): string {
-  const refs = uniq([
-    ...artifacts.compileIr.sourceRefsByField.target_audiences ?? [],
-    ...artifacts.compileIr.sourceRefsByField.audience_situations ?? [],
-  ])
+  const refs = sourceRefsForFields(artifacts.compileIr, ["target_audiences", "audience_situations"])
   return [
     docFrontmatter(
       "hero_audiences",
@@ -703,10 +932,7 @@ function renderHeroValueProps(
   report: AgentModeReport,
   artifacts: SceneCompileArtifacts,
 ): string {
-  const refs = uniq([
-    ...artifacts.compileIr.sourceRefsByField.selling_points ?? [],
-    ...artifacts.compileIr.sourceRefsByField.business_goal ?? [],
-  ])
+  const refs = sourceRefsForFields(artifacts.compileIr, ["selling_points", "business_goal"])
   return [
     docFrontmatter(
       "hero_value_props",
@@ -741,7 +967,7 @@ function renderHeroCreativeAssets(
   report: AgentModeReport,
   artifacts: SceneCompileArtifacts,
 ): string {
-  const refs = uniq([...artifacts.compileIr.sourceRefsByField.creative_assets ?? []])
+  const refs = sourceRefsForFields(artifacts.compileIr, ["creative_assets"])
   return [
     docFrontmatter(
       "hero_creative_assets",
@@ -760,7 +986,10 @@ function renderHeroCreativeAssets(
     ),
     joinSection(
       "图片与视觉证据",
-      artifacts.compileIr.imageEvidence.map((item) => `- ${item}`),
+      uniq([
+        ...renderImageEvidenceRefs(artifacts.compileIr.imageEvidenceRefs ?? []),
+        ...artifacts.compileIr.imageEvidence.map((item) => `- ${item}`),
+      ]),
     ),
     joinSection(
       "卖点如何被表达出来",
@@ -776,10 +1005,7 @@ function renderHeroMetricJudgement(
   report: AgentModeReport,
   artifacts: SceneCompileArtifacts,
 ): string {
-  const refs = uniq([
-    ...artifacts.compileIr.sourceRefsByField.metric_signals ?? [],
-    ...artifacts.compileIr.sourceRefsByField.decision_rules ?? [],
-  ])
+  const refs = sourceRefsForFields(artifacts.compileIr, ["metric_signals", "decision_rules"])
   return [
     docFrontmatter(
       "hero_metric_judgement",
@@ -814,10 +1040,7 @@ function renderHeroActionsExperiments(
   report: AgentModeReport,
   artifacts: SceneCompileArtifacts,
 ): string {
-  const refs = uniq([
-    ...artifacts.compileIr.sourceRefsByField.action_playbook ?? [],
-    ...artifacts.compileIr.sourceRefsByField.experiment_evidence ?? [],
-  ])
+  const refs = sourceRefsForFields(artifacts.compileIr, ["action_playbook", "experiment_evidence"])
   return [
     docFrontmatter(
       "hero_actions_experiments",
@@ -857,11 +1080,7 @@ function renderMainlineSteps(
   report: AgentModeReport,
   artifacts: SceneCompileArtifacts,
 ): string {
-  const refs = uniq([
-    ...artifacts.compileIr.sourceRefsByField.mainline_steps ?? [],
-    ...artifacts.compileIr.sourceRefsByField.execution_steps ?? [],
-    ...artifacts.compileIr.sourceRefsByField.process_flow_or_business_model ?? [],
-  ])
+  const refs = sourceRefsForFields(artifacts.compileIr, ["mainline_steps", "execution_steps", "process_flow_or_business_model"])
   const frontmatter = docFrontmatter(
     "business_process",
     `${report.sourceName.replace(/\.[^.]+$/, "")} · 主链路步骤`,
@@ -909,11 +1128,7 @@ function renderKeyJudgements(
   artifacts: SceneCompileArtifacts,
 ): string {
   const judgementField = report.groundTruth.fields.find((field) => field.key === "judgment_criteria")
-  const refs = uniq([
-    ...artifacts.compileIr.sourceRefsByField.key_judgements ?? [],
-    ...artifacts.compileIr.sourceRefsByField.judgment_criteria ?? [],
-    ...artifacts.compileIr.sourceRefsByField.validation_methods ?? [],
-  ])
+  const refs = sourceRefsForFields(artifacts.compileIr, ["key_judgements", "judgment_criteria", "validation_methods"])
   const frontmatter = docFrontmatter(
     "business_judgements",
     `${report.sourceName.replace(/\.[^.]+$/, "")} · 关键判断`,
@@ -961,10 +1176,7 @@ function renderBoundaries(
   const boundaryField = report.groundTruth.fields.find((field) =>
     ["boundaries", "exceptions_and_non_applicable_scope"].includes(field.key),
   )
-  const refs = uniq([
-    ...artifacts.compileIr.sourceRefsByField.boundaries ?? [],
-    ...artifacts.compileIr.sourceRefsByField.exceptions_and_non_applicable_scope ?? [],
-  ])
+  const refs = sourceRefsForFields(artifacts.compileIr, ["boundaries", "exceptions_and_non_applicable_scope"])
   const frontmatter = docFrontmatter(
     "business_boundaries",
     `${report.sourceName.replace(/\.[^.]+$/, "")} · 边界与例外`,
@@ -1003,11 +1215,7 @@ function renderEvidenceCases(
 ): string {
   const evidenceField = report.groundTruth.fields.find((field) => field.key === "evidence")
   const validationField = report.groundTruth.fields.find((field) => field.key === "validation_methods")
-  const refs = uniq([
-    ...artifacts.compileIr.sourceRefsByField.evidence ?? [],
-    ...artifacts.compileIr.sourceRefsByField.validation_methods ?? [],
-    ...artifacts.compileIr.sourceRefsByField.metrics ?? [],
-  ])
+  const refs = sourceRefsForFields(artifacts.compileIr, ["evidence", "validation_methods", "metrics"])
   const frontmatter = docFrontmatter(
     "business_evidence",
     `${report.sourceName.replace(/\.[^.]+$/, "")} · 证据与案例`,
@@ -1031,7 +1239,10 @@ function renderEvidenceCases(
     ),
     joinSection(
       "图片与视觉证据",
-      artifacts.compileIr.imageEvidence.map((item) => `- ${item}`),
+      uniq([
+        ...renderImageEvidenceRefs(artifacts.compileIr.imageEvidenceRefs ?? []),
+        ...artifacts.compileIr.imageEvidence.map((item) => `- ${item}`),
+      ]),
     ),
     joinSection(
       "修订痕迹与补充线索",
@@ -1053,16 +1264,25 @@ function renderSourceSummary(
   report: AgentModeReport,
   artifacts: SceneCompileArtifacts,
 ): string {
+  const relatedPages = isTaskGenerationScene(report)
+    ? [
+        `[[roles/${artifacts.docSlug}|角色与职责]]`,
+        `[[tasks/${artifacts.docSlug}|可执行任务卡]]`,
+        `[[quality/${artifacts.docSlug}|质量与验收]]`,
+        `[[collaboration/${artifacts.docSlug}|协同关系]]`,
+        `[[reviews/${artifacts.docSlug}|复盘沉淀]]`,
+      ]
+    : [
+        `[[business/${artifacts.docSlug}/index|业务总览]]`,
+        `[[business/${artifacts.docSlug}/主链路步骤|主链路步骤]]`,
+        `[[business/${artifacts.docSlug}/关键判断|关键判断]]`,
+      ]
   const frontmatter = docFrontmatter(
     "source",
     `Source: ${report.sourceName}`,
     "记录该业务资料的来源、摘要、主链路和引用入口。",
     [report.sourcePath],
-    [
-      `[[business/${artifacts.docSlug}/index|业务总览]]`,
-      `[[business/${artifacts.docSlug}/主链路步骤|主链路步骤]]`,
-      `[[business/${artifacts.docSlug}/关键判断|关键判断]]`,
-    ],
+    relatedPages,
   )
   return [
     frontmatter,
@@ -1091,14 +1311,7 @@ function renderSourceSummary(
     ),
     joinSection(
       "关联知识页",
-      [
-        `- [[business/${artifacts.docSlug}/index|业务总览]]`,
-        `- [[business/${artifacts.docSlug}/主链路步骤|主链路步骤]]`,
-        `- [[business/${artifacts.docSlug}/关键判断|关键判断]]`,
-        `- [[business/${artifacts.docSlug}/边界与例外|边界与例外]]`,
-        `- [[business/${artifacts.docSlug}/证据与案例|证据与案例]]`,
-        ...(report.sourceKind === "xmind" ? [`- [[business/${artifacts.docSlug}/脑图结构|脑图结构]]`] : []),
-      ],
+      relatedPages.map((page) => `- ${page}`),
     ),
     ...renderFieldProjectionSection(artifacts.compileIr, Object.keys(artifacts.compileIr.fieldValueMap).slice(0, 8)),
   ].join("\n")
@@ -1142,7 +1355,7 @@ function renderPages(
   report: AgentModeReport,
   artifacts: SceneCompileArtifacts,
 ): RenderedPage[] {
-  const lookup: Record<SceneCompilePagePlan["pageKey"], (report: AgentModeReport, artifacts: SceneCompileArtifacts) => string> = {
+  const lookup: Partial<Record<SceneCompilePagePlan["pageKey"], (report: AgentModeReport, artifacts: SceneCompileArtifacts) => string>> = {
     business_index: renderBusinessIndex,
     mainline_steps: renderMainlineSteps,
     key_judgements: renderKeyJudgements,
@@ -1161,9 +1374,11 @@ function renderPages(
       pageKey: page.pageKey,
       path: page.path,
       content:
-        page.pageKey === "mindmap_structure" && report.sourceKind !== "xmind"
+        page.pageKey.startsWith("task_")
           ? ""
-          : lookup[page.pageKey](report, artifacts),
+          : page.pageKey === "mindmap_structure" && report.sourceKind !== "xmind"
+            ? ""
+            : lookup[page.pageKey]?.(report, artifacts) ?? "",
     }))
     .filter((page) => page.content.trim().length > 0)
 }
@@ -1196,26 +1411,40 @@ async function updateWikiIndex(projectPath: string, report: AgentModeReport, art
   const fullPath = `${projectPath}/wiki/index.md`
   const existing = await tryReadFile(fullPath)
   const title = report.sourceName.replace(/\.[^.]+$/, "")
+  const taskPages = isTaskGenerationScene(report)
+    ? [
+        `- [[roles/${artifacts.docSlug}|${title} · 角色与职责]]`,
+        `- [[tasks/${artifacts.docSlug}|${title} · 可执行任务卡]]`,
+        `- [[quality/${artifacts.docSlug}|${title} · 质量与验收]]`,
+        `- [[collaboration/${artifacts.docSlug}|${title} · 协同关系]]`,
+        `- [[reviews/${artifacts.docSlug}|${title} · 复盘沉淀]]`,
+        `- [[sources/${artifacts.docSlug}|Source: ${report.sourceName}]]`,
+      ]
+    : []
   const body = [
-    "## 业务知识页",
-    `- [[business/${artifacts.docSlug}/index|${title} · 业务总览]]`,
-    ...(isHeroImageScene(report)
-      ? [
-          `- [[business/${artifacts.docSlug}/人群与场景|${title} · 人群与场景]]`,
-          `- [[business/${artifacts.docSlug}/卖点与表达|${title} · 卖点与表达]]`,
-          `- [[business/${artifacts.docSlug}/素材与版式|${title} · 素材与版式]]`,
-          `- [[business/${artifacts.docSlug}/指标与判断|${title} · 指标与判断]]`,
-          `- [[business/${artifacts.docSlug}/动作与实验|${title} · 动作与实验]]`,
-          `- [[business/${artifacts.docSlug}/证据与案例|${title} · 证据与案例]]`,
-        ]
+    isTaskGenerationScene(report) ? "## 经营任务知识页" : "## 业务知识页",
+    ...(taskPages.length > 0
+      ? taskPages
       : [
-          `- [[business/${artifacts.docSlug}/主链路步骤|${title} · 主链路步骤]]`,
-          `- [[business/${artifacts.docSlug}/关键判断|${title} · 关键判断]]`,
-          `- [[business/${artifacts.docSlug}/边界与例外|${title} · 边界与例外]]`,
-          `- [[business/${artifacts.docSlug}/证据与案例|${title} · 证据与案例]]`,
+          `- [[business/${artifacts.docSlug}/index|${title} · 业务总览]]`,
+          ...(isHeroImageScene(report)
+            ? [
+                `- [[business/${artifacts.docSlug}/人群与场景|${title} · 人群与场景]]`,
+                `- [[business/${artifacts.docSlug}/卖点与表达|${title} · 卖点与表达]]`,
+                `- [[business/${artifacts.docSlug}/素材与版式|${title} · 素材与版式]]`,
+                `- [[business/${artifacts.docSlug}/指标与判断|${title} · 指标与判断]]`,
+                `- [[business/${artifacts.docSlug}/动作与实验|${title} · 动作与实验]]`,
+                `- [[business/${artifacts.docSlug}/证据与案例|${title} · 证据与案例]]`,
+              ]
+            : [
+                `- [[business/${artifacts.docSlug}/主链路步骤|${title} · 主链路步骤]]`,
+                `- [[business/${artifacts.docSlug}/关键判断|${title} · 关键判断]]`,
+                `- [[business/${artifacts.docSlug}/边界与例外|${title} · 边界与例外]]`,
+                `- [[business/${artifacts.docSlug}/证据与案例|${title} · 证据与案例]]`,
+              ]),
+          ...(report.sourceKind === "xmind" ? [`- [[business/${artifacts.docSlug}/脑图结构|${title} · 脑图结构]]`] : []),
+          `- [[sources/${artifacts.docSlug}|Source: ${report.sourceName}]]`,
         ]),
-    ...(report.sourceKind === "xmind" ? [`- [[business/${artifacts.docSlug}/脑图结构|${title} · 脑图结构]]`] : []),
-    `- [[sources/${artifacts.docSlug}|Source: ${report.sourceName}]]`,
   ].join("\n")
   const next = replaceManagedSection(
     existing || "# Wiki Index\n",
@@ -1230,26 +1459,39 @@ async function updateWikiOverview(projectPath: string, report: AgentModeReport, 
   const fullPath = `${projectPath}/wiki/overview.md`
   const existing = await tryReadFile(fullPath)
   const title = report.sourceName.replace(/\.[^.]+$/, "")
+  const taskEntrypoints = isTaskGenerationScene(report)
+    ? [
+        `- 角色入口：[[roles/${artifacts.docSlug}|角色与职责]]`,
+        `- 任务入口：[[tasks/${artifacts.docSlug}|可执行任务卡]]`,
+        `- 质量入口：[[quality/${artifacts.docSlug}|质量与验收]]`,
+        `- 协同入口：[[collaboration/${artifacts.docSlug}|协同关系]]`,
+        `- 复盘入口：[[reviews/${artifacts.docSlug}|复盘沉淀]]`,
+      ]
+    : []
   const body = [
     `## ${title}`,
     "",
     report.understanding.summary,
     "",
-    ...(isHeroImageScene(report)
-      ? [
-          `- 人群入口：[[business/${artifacts.docSlug}/人群与场景|人群与场景]]`,
-          `- 卖点入口：[[business/${artifacts.docSlug}/卖点与表达|卖点与表达]]`,
-          `- 素材入口：[[business/${artifacts.docSlug}/素材与版式|素材与版式]]`,
-          `- 指标入口：[[business/${artifacts.docSlug}/指标与判断|指标与判断]]`,
-          `- 动作入口：[[business/${artifacts.docSlug}/动作与实验|动作与实验]]`,
-          `- 证据入口：[[business/${artifacts.docSlug}/证据与案例|证据与案例]]`,
-        ]
+    ...(taskEntrypoints.length > 0
+      ? taskEntrypoints
       : [
-          `- 主链路入口：[[business/${artifacts.docSlug}/主链路步骤|主链路步骤]]`,
-          `- 判断入口：[[business/${artifacts.docSlug}/关键判断|关键判断]]`,
-          `- 证据入口：[[business/${artifacts.docSlug}/证据与案例|证据与案例]]`,
+          ...(isHeroImageScene(report)
+            ? [
+                `- 人群入口：[[business/${artifacts.docSlug}/人群与场景|人群与场景]]`,
+                `- 卖点入口：[[business/${artifacts.docSlug}/卖点与表达|卖点与表达]]`,
+                `- 素材入口：[[business/${artifacts.docSlug}/素材与版式|素材与版式]]`,
+                `- 指标入口：[[business/${artifacts.docSlug}/指标与判断|指标与判断]]`,
+                `- 动作入口：[[business/${artifacts.docSlug}/动作与实验|动作与实验]]`,
+                `- 证据入口：[[business/${artifacts.docSlug}/证据与案例|证据与案例]]`,
+              ]
+            : [
+                `- 主链路入口：[[business/${artifacts.docSlug}/主链路步骤|主链路步骤]]`,
+                `- 判断入口：[[business/${artifacts.docSlug}/关键判断|关键判断]]`,
+                `- 证据入口：[[business/${artifacts.docSlug}/证据与案例|证据与案例]]`,
+              ]),
+          ...(report.sourceKind === "xmind" ? [`- 脑图入口：[[business/${artifacts.docSlug}/脑图结构|脑图结构]]`] : []),
         ]),
-    ...(report.sourceKind === "xmind" ? [`- 脑图入口：[[business/${artifacts.docSlug}/脑图结构|脑图结构]]`] : []),
   ].join("\n")
   const next = replaceManagedSection(
     existing || "# Wiki Overview\n",
@@ -1263,7 +1505,7 @@ async function updateWikiOverview(projectPath: string, report: AgentModeReport, 
 async function updateWikiLog(projectPath: string, report: AgentModeReport): Promise<string> {
   const fullPath = `${projectPath}/wiki/log.md`
   const existing = await tryReadFile(fullPath)
-  const line = `- ${nowIso()}: 依据场景 schema 重新编译业务知识页，来源 \`${report.sourceName}\`。`
+  const line = `- ${nowIso()}: 依据场景 schema 重新编译${isTaskGenerationScene(report) ? "经营任务知识页" : "业务知识页"}，来源 \`${report.sourceName}\`。`
   const next = existing.trim()
     ? `${existing.trimEnd()}\n${line}\n`
     : `# Wiki Log\n\n${line}\n`
@@ -1275,20 +1517,67 @@ export async function writeSceneCompile(
   projectPath: string,
   report: AgentModeReport,
   scenePack: ScenePack,
+  options: { refreshTaskIndex?: boolean } = {},
 ): Promise<SceneCompileWriteResult> {
   const pp = normalizePath(projectPath)
   const artifacts = buildSceneCompileArtifacts(report, scenePack)
+  await enrichImageEvidenceRefsFromIndex(pp, report, artifacts)
+  const taskWikiPages = isTaskGenerationScene(report) && report.taskContextPack
+    ? buildTaskWikiPages(report.taskContextPack, artifacts.docSlug)
+    : []
   const pages = renderPages(report, artifacts)
   const writtenPaths: string[] = []
 
   await createDirectory(`${pp}/wiki`).catch(() => {})
-  await createDirectory(`${pp}/wiki/business`).catch(() => {})
-  await createDirectory(`${pp}/wiki/business/${artifacts.docSlug}`).catch(() => {})
+  if (!isTaskGenerationScene(report)) {
+    await createDirectory(`${pp}/wiki/business`).catch(() => {})
+    await createDirectory(`${pp}/wiki/business/${artifacts.docSlug}`).catch(() => {})
+  }
   await createDirectory(`${pp}/wiki/sources`).catch(() => {})
+  if (isTaskGenerationScene(report)) {
+    await createDirectory(`${pp}/wiki/roles`).catch(() => {})
+    await createDirectory(`${pp}/wiki/tasks`).catch(() => {})
+    await createDirectory(`${pp}/wiki/quality`).catch(() => {})
+    await createDirectory(`${pp}/wiki/collaboration`).catch(() => {})
+    await createDirectory(`${pp}/wiki/reviews`).catch(() => {})
+    await createDirectory(`${pp}/.llm-wiki`).catch(() => {})
+    await createDirectory(`${pp}/.llm-wiki/task-context-packs`).catch(() => {})
+    await createDirectory(`${pp}/.llm-wiki/task-rule-packs`).catch(() => {})
+  }
 
   for (const page of pages) {
     await writeFile(`${pp}/${page.path}`, page.content)
     writtenPaths.push(page.path)
+  }
+
+  if (isTaskGenerationScene(report) && report.taskContextPack) {
+    await writeFile(
+      `${pp}/.llm-wiki/task-context-packs/${report.taskContextPack.packId}.json`,
+      JSON.stringify(report.taskContextPack, null, 2),
+    )
+    if (report.taskContextPack.taskRulePack) {
+      await writeFile(
+        `${pp}/.llm-wiki/task-rule-packs/${report.taskContextPack.packId}.json`,
+        JSON.stringify(report.taskContextPack.taskRulePack, null, 2),
+      )
+      writtenPaths.push(`.llm-wiki/task-rule-packs/${report.taskContextPack.packId}.json`)
+    }
+    if (report.taskContextPack.taskTaxonomy) {
+      await writeFile(
+        `${pp}/.llm-wiki/task-taxonomy.json`,
+        JSON.stringify(report.taskContextPack.taskTaxonomy, null, 2),
+      )
+      writtenPaths.push(".llm-wiki/task-taxonomy.json")
+    }
+    for (const page of taskWikiPages) {
+      await writeFile(`${pp}/${page.path}`, page.content)
+      writtenPaths.push(page.path)
+    }
+    if (options.refreshTaskIndex !== false) {
+      const taskIndex = await buildOrRefreshTaskIndex(pp)
+      await writeFile(`${pp}/wiki/tasks/index.md`, renderTaskIndexMarkdown(taskIndex))
+      writtenPaths.push("wiki/tasks/index.md", ".llm-wiki/task-index.json")
+    }
   }
 
   writtenPaths.push(await updateWikiIndex(pp, report, artifacts))

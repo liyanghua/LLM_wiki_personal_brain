@@ -191,6 +191,7 @@ function buildAcceptanceSummary(input: {
 
 export function AgentWorkbench() {
   const project = useWikiStore((s) => s.project)
+  const setActiveView = useWikiStore((s) => s.setActiveView)
   const llmConfig = useWikiStore((s) => s.llmConfig)
   const reports = useAgentModeStore((s) => s.reports)
   const selectedDocId = useAgentModeStore((s) => s.selectedDocId)
@@ -226,7 +227,6 @@ export function AgentWorkbench() {
   const [overrideReason, setOverrideReason] = useState("")
   const [composerRequest, setComposerRequest] = useState<ComposerRequest | null>(null)
   const [conversationStage, setConversationStage] = useState<ConversationStage>("revise")
-  const qaPanelRef = useRef<HTMLDivElement | null>(null)
   const validationAbortRef = useRef<AbortController | null>(null)
 
   function updateRuntime(
@@ -844,19 +844,15 @@ export function AgentWorkbench() {
             <h2 className="text-center text-xl font-semibold text-zinc-900">这个项目还没有修订工作台数据</h2>
             <p className="mx-auto mt-3 max-w-2xl text-center text-sm leading-6 text-zinc-600">
               旧项目还没生成新的结构化修订报告，所以暂时没有“问题卡修订”和“修订感知问答”。
-              但你现在仍然可以先进入项目知识问答，基于当前项目里的 wiki 和资料继续提问。
+              普通知识问答已经独立到左侧「知识问答」入口，避免和业务修订线程混在一起。
             </p>
             <div className="mt-6 flex flex-wrap justify-center gap-3">
               <Button
                 className="bg-amber-600 text-white hover:bg-amber-700"
-                onClick={() => {
-                  requestAnimationFrame(() => {
-                    qaPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "end" })
-                  })
-                }}
+                onClick={() => setActiveView("chat")}
               >
                 <MessageSquareText className="mr-2 h-4 w-4" />
-                开始项目问答
+                去知识问答
               </Button>
               <Button variant="outline" onClick={() => useWikiStore.getState().setActiveView("sources")}>
                 去导入新文档
@@ -865,22 +861,6 @@ export function AgentWorkbench() {
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 px-6 pb-6 pt-6">
-          <div ref={qaPanelRef} className="h-full overflow-hidden rounded-3xl border border-zinc-200 bg-white shadow-sm">
-            <div className="border-b border-zinc-100 px-5 py-4">
-              <div className="flex items-center gap-2 text-sm font-medium text-zinc-900">
-                <MessageSquareText className="h-4 w-4 text-amber-700" />
-                项目知识问答
-              </div>
-              <p className="mt-1 text-sm text-zinc-500">
-                这里先基于当前项目已有的 wiki 与资料问答。等你重新导入业务文档后，会自动升级成修订感知问答。
-              </p>
-            </div>
-            <div className="min-h-0 h-[calc(100%-73px)] overflow-hidden">
-              <ChatPanel hideSidebar />
-            </div>
-          </div>
-        </div>
       </div>
     )
   }

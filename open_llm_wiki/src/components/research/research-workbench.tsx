@@ -6,6 +6,7 @@ import rehypeKatex from "rehype-katex"
 import {
   AlertTriangle,
   Bot,
+  BriefcaseBusiness,
   CheckCircle2,
   ChevronRight,
   Clock3,
@@ -22,6 +23,7 @@ import { Input } from "@/components/ui/input"
 import { useResearchStore } from "@/stores/research-store"
 import { useWikiStore } from "@/stores/wiki-store"
 import {
+  createReviewTaskFromOpportunityCard,
   createRevisionTaskFromResearchFinding,
   hasUsableResearchBackend,
   promoteResearchFindingToRevision,
@@ -33,8 +35,9 @@ import {
 import { normalizePath } from "@/lib/path-utils"
 import { useReviewStore } from "@/stores/review-store"
 import { useAgentModeStore } from "@/stores/agent-mode-store"
+import { isImeComposing } from "@/lib/keyboard-utils"
 import { resolveMarkdownImageSrc } from "@/lib/markdown-image-resolver"
-import type { ResearchFinding, ResearchReportSection, ResearchSession, ResearchThreadEntry } from "@/lib/research-types"
+import type { OpportunityCard, ResearchFinding, ResearchReportSection, ResearchSession, ResearchThreadEntry } from "@/lib/research-types"
 
 const PHASE_LABELS: Record<string, string> = {
   clarify_scope: "澄清研究范围",
@@ -62,6 +65,11 @@ export function ResearchWorkbench() {
     [sessions, activeSessionId],
   )
   const [topic, setTopic] = useState("")
+  const [opportunityTopic, setOpportunityTopic] = useState("")
+  const [targetMarket, setTargetMarket] = useState("")
+  const [targetAudience, setTargetAudience] = useState("")
+  const [businessContext, setBusinessContext] = useState("")
+  const [constraints, setConstraints] = useState("")
   const [answer, setAnswer] = useState("")
   const projectPath = project?.path ?? null
   const completedArtifacts = Array.isArray(activeSession?.runtime?.completedArtifacts)
@@ -73,6 +81,8 @@ export function ResearchWorkbench() {
   const threadEntries = Array.isArray(activeSession?.thread) ? activeSession.thread : []
   const sourceEntries = Array.isArray(activeSession?.sources) ? activeSession.sources : []
   const findingEntries = Array.isArray(activeSession?.findings) ? activeSession.findings : []
+  const opportunityCards = Array.isArray(activeSession?.opportunityCards) ? activeSession.opportunityCards : []
+  const isOpportunitySession = activeSession?.taskType === "market_opportunity_analysis"
   const reportFallbackMessage = activeSession
     ? activeSession.status === "needs_input"
       ? "当前还在等待你的研究澄清，报告尚未开始生成。你可以先回答澄清问题，或者点击“跳过并直接开始”。"
@@ -84,9 +94,42 @@ export function ResearchWorkbench() {
     : "报告尚未生成。完成研究后，这里会展示结构化报告与可回流业务修订的建议。"
 
   function handleCreateSession() {
-    if (!topic.trim()) return
+    if (!topic.trim() || !project) return
+    const searchConfig = useWikiStore.getState().searchApiConfig
+    if (!hasUsableResearchBackend(searchConfig)) {
+      window.alert("当前研究后端尚未配置。请先到“设置 → 网页搜索”补充 Firecrawl 或 Tavily。")
+      return
+    }
     const sessionId = enterResearchWorkbench({ topic: topic.trim(), triggerSource: "manual" })
     setTopic("")
+    if (project) {
+      void runDeepResearchSession(sessionId, normalizePath(project.path))
+    }
+  }
+
+  function handleCreateOpportunitySession() {
+    if (!opportunityTopic.trim() || !project) return
+    const searchConfig = useWikiStore.getState().searchApiConfig
+    if (!hasUsableResearchBackend(searchConfig)) {
+      window.alert("当前研究后端尚未配置。请先到“设置 → 网页搜索”补充 Firecrawl 或 Tavily。")
+      return
+    }
+    const sessionId = enterResearchWorkbench({
+      taskType: "market_opportunity_analysis",
+      topic: opportunityTopic.trim(),
+      targetMarket: targetMarket.trim() || null,
+      targetAudience: targetAudience.trim() || null,
+      businessContext: businessContext.trim() || null,
+      constraints: constraints.trim() || null,
+      triggerSource: "market_opportunity_analysis",
+      breadth: 4,
+      depth: 2,
+    })
+    setOpportunityTopic("")
+    setTargetMarket("")
+    setTargetAudience("")
+    setBusinessContext("")
+    setConstraints("")
     if (project) {
       void runDeepResearchSession(sessionId, normalizePath(project.path))
     }
@@ -176,6 +219,12 @@ export function ResearchWorkbench() {
     setActiveView("review")
   }
 
+  async function handleCreateOpportunityReview(card: OpportunityCard) {
+    if (!activeSession) return
+    await createReviewTaskFromOpportunityCard(activeSession.sessionId, card.cardId)
+    setActiveView("review")
+  }
+
   return (
     <div className="flex h-full min-h-0">
       <div className="w-[280px] shrink-0 border-r bg-muted/20">
@@ -189,11 +238,70 @@ export function ResearchWorkbench() {
           </p>
         </div>
         <div className="space-y-3 border-b px-4 py-4">
-          <Input
-            value={topic}
-            onChange={(e) => setTopic(e.target.value)}
-            placeholder="输入新的研究主题..."
-          />
+          <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-3">
+            <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-amber-950">
+              <BriefcaseBusiness className="h-4 w-4" />
+              商机/市场分析
+            </div>
+            <div className="space-y-2">
+              <Input
+                value={opportunityTopic}
+                onChange={(e) => setOpportunityTopic(e.target.value)}
+                placeholder="分析对象，如 AI 主图设计工具"
+                className="bg-white"
+              />
+              <Input
+                value={targetMarket}
+                onChange={(e) => setTargetMarket(e.target.value)}
+                placeholder="目标市场，可选"
+                className="bg-white"
+              />
+              <Input
+                value={targetAudience}
+                onChange={(e) => setTargetAudience(e.target.value)}
+                placeholder="目标客群，可选"
+                className="bg-white"
+              />
+              <Input
+                value={businessContext}
+                onChange={(e) => setBusinessContext(e.target.value)}
+                placeholder="业务背景/已知机会，可选"
+                className="bg-white"
+              />
+              <Input
+                value={constraints}
+                onChange={(e) => setConstraints(e.target.value)}
+                placeholder="约束或希望验证的问题，可选"
+                className="bg-white"
+              />
+            </div>
+            <Button
+              className="mt-3 w-full"
+              variant="secondary"
+              onClick={handleCreateOpportunitySession}
+              disabled={!project || !opportunityTopic.trim()}
+            >
+              生成机会卡片矩阵
+            </Button>
+          </div>
+          <div className="rounded-2xl border bg-card p-3">
+            <div className="mb-2 flex items-center gap-2 text-sm font-semibold">
+              <Search className="h-4 w-4 text-primary" />
+              快速新建深度研究
+            </div>
+            <p className="mb-2 text-xs text-muted-foreground">
+              输入一个研究主题即可创建并运行，原“轻量调研面板”的快速入口已合并到这里。
+            </p>
+            <Input
+              value={topic}
+              onChange={(e) => setTopic(e.target.value)}
+              onKeyDown={(e) => {
+                if (isImeComposing(e)) return
+                if (e.key === "Enter") handleCreateSession()
+              }}
+              placeholder="输入新的研究主题..."
+            />
+          </div>
           <Button className="w-full" onClick={handleCreateSession} disabled={!project || !topic.trim()}>
             开始深度研究
           </Button>
@@ -218,7 +326,7 @@ export function ResearchWorkbench() {
                     <div className="min-w-0">
                       <div className="truncate text-sm font-medium">{session.topic}</div>
                       <div className="mt-1 text-[11px] text-muted-foreground">
-                        {PHASE_LABELS[session.phase]} · {statusLabel(session.status)}
+                        {session.taskType === "market_opportunity_analysis" ? "商机分析" : "深度研究"} · {PHASE_LABELS[session.phase]} · {statusLabel(session.status)}
                       </div>
                     </div>
                     <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -281,10 +389,33 @@ export function ResearchWorkbench() {
 
             <div className="grid min-h-0 flex-1 grid-cols-[1.2fr_0.9fr]">
               <div className="min-h-0 overflow-y-auto border-r px-5 py-4">
+                {isOpportunitySession && (
+                  <section className="mb-5 rounded-xl border border-amber-200 bg-amber-50/60 p-4">
+                    <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-amber-950">
+                      <BriefcaseBusiness className="h-4 w-4" />
+                      机会卡片矩阵
+                    </div>
+                    {opportunityCards.length > 0 ? (
+                      <div className="grid gap-3">
+                        {opportunityCards.map((card) => (
+                          <OpportunityCardView
+                            key={card.cardId}
+                            card={card}
+                            onCreateReview={() => void handleCreateOpportunityReview(card)}
+                          />
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="rounded-lg border border-dashed border-amber-300 bg-white/70 px-4 py-5 text-sm text-amber-900">
+                        研究完成后，这里会优先展示“机会卡片矩阵”。如果来源证据不足，不会生成伪机会卡。
+                      </div>
+                    )}
+                  </section>
+                )}
                 <section className="mb-5 rounded-xl border bg-card p-4">
                   <div className="mb-2 flex items-center gap-2 text-sm font-semibold">
                     <Sparkles className="h-4 w-4 text-primary" />
-                    研究线程
+                    {isOpportunitySession ? "过程与证据：研究线程" : "研究线程"}
                   </div>
                   <div className="space-y-3 text-sm">
                     {threadEntries.length > 0 ? threadEntries.map((entry) => (
@@ -532,6 +663,69 @@ function SourceEvidenceCard({ source }: { source: ResearchSession["sources"][num
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+function OpportunityCardView({
+  card,
+  onCreateReview,
+}: {
+  card: OpportunityCard
+  onCreateReview: () => void
+}) {
+  return (
+    <div className="rounded-xl border border-amber-200 bg-white p-4 shadow-sm">
+      <div className="mb-2 flex items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold text-zinc-950">{card.title}</div>
+          <div className="mt-1 text-xs text-zinc-600">目标客群：{card.targetSegment}</div>
+        </div>
+        <span className="rounded-full bg-amber-100 px-2 py-1 text-[11px] font-medium text-amber-900">
+          置信度 {Math.round(card.confidence * 100)}%
+        </span>
+      </div>
+      <div className="grid gap-2 text-xs text-zinc-700">
+        <div className="rounded-lg bg-amber-50 px-3 py-2">
+          <span className="font-medium text-amber-950">痛点：</span>{card.painPoint}
+        </div>
+        <div className="rounded-lg bg-emerald-50 px-3 py-2">
+          <span className="font-medium text-emerald-950">机会假设：</span>{card.opportunityHypothesis}
+        </div>
+        <div className="rounded-lg bg-sky-50 px-3 py-2">
+          <span className="font-medium text-sky-950">证据：</span>{card.evidenceSummary || "待补证据"}
+        </div>
+      </div>
+      {card.competitorSignals.length > 0 && (
+        <div className="mt-3 text-xs text-zinc-600">
+          <span className="font-medium text-zinc-900">竞品/替代信号：</span>{card.competitorSignals.join("；")}
+        </div>
+      )}
+      {card.risks.length > 0 && (
+        <div className="mt-2 text-xs text-amber-800">
+          <span className="font-medium">风险与缺口：</span>{card.risks.join("；")}
+        </div>
+      )}
+      {card.validationExperiments.length > 0 && (
+        <div className="mt-3">
+          <div className="mb-1 text-xs font-medium text-zinc-900">建议验证实验</div>
+          <div className="flex flex-wrap gap-1.5">
+            {card.validationExperiments.map((experiment) => (
+              <span key={experiment} className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] text-emerald-800">
+                {experiment}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <Button size="sm" variant="outline" onClick={onCreateReview}>
+          生成评审任务
+        </Button>
+        <span className="text-[11px] text-muted-foreground">
+          {card.status === "promoted_to_review" ? "已进入评审" : "候选资产，需人工确认后才能进入策略链路"}
+        </span>
+      </div>
     </div>
   )
 }

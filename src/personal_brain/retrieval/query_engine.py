@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -431,6 +432,126 @@ class QueryEngine:
                 }
                 for item in ranked[:5]
             ],
+        }
+
+    def search_tasks(
+        self,
+        *,
+        query: str = "",
+        role: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        task_module: str | None = None,
+        product_id: str | None = None,
+        task_status: str | None = None,
+        include_needs_review: bool = True,
+        limit: int = 12,
+    ) -> dict:
+        index_path = (self.config.workspace_root or self.config.root) / ".llm-wiki" / "task-index.json"
+        if not index_path.exists():
+            return {
+                "backend": "task-index",
+                "index_path": index_path.as_posix(),
+                "results": [],
+                "warnings": ["task_index_missing"],
+            }
+        try:
+            payload = json.loads(index_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return {
+                "backend": "task-index",
+                "index_path": index_path.as_posix(),
+                "results": [],
+                "warnings": ["task_index_invalid_json"],
+            }
+        entries = payload.get("entries") if isinstance(payload, dict) else []
+        if not isinstance(entries, list):
+            entries = []
+
+        def norm(value: str | None) -> str:
+            return (value or "").lower().replace(" ", "")
+
+        def role_matches(entry: dict) -> tuple[bool, list[str], int]:
+            if not role:
+                return True, [], 0
+            needle = norm(role)
+            candidates = [
+                norm(str(entry.get("ownerRole") or "")),
+                norm(str(entry.get("normalizedOwnerRole") or "")),
+                *[norm(str(item)) for item in entry.get("collaboratorRoles") or []],
+            ]
+            ok = any(needle in item or item in needle for item in candidates if item)
+            return ok, ([f"角色匹配：{role}"] if ok else []), (45 if ok else 0)
+
+        def time_matches(entry: dict) -> tuple[bool, list[str], int]:
+            if not start_date and not end_date:
+                return True, [], 0
+            time_range = entry.get("timeRange") or {}
+            label = str(time_range.get("label") or "")
+            start = str(time_range.get("start") or "")
+            end = str(time_range.get("end") or "")
+            filter_start = start_date or end_date or ""
+            filter_end = end_date or start_date or ""
+            ok = False
+            if start and end and filter_start and filter_end:
+                ok = start <= filter_end and end >= filter_start
+            elif filter_start[:7] and filter_start[:7] in label:
+                ok = True
+            return ok, ([f"时间匹配：{label}"] if ok else []), (35 if ok else 0)
+
+        def text_score(entry: dict) -> tuple[list[str], int]:
+            tokens = [item for item in query.lower().replace("/", " ").split() if len(item) >= 2]
+            haystack = norm(" ".join([
+                str(entry.get("title") or ""),
+                str(entry.get("taskModule") or ""),
+                str(entry.get("taskModuleLabel") or ""),
+                str(entry.get("productId") or ""),
+                str(entry.get("taskItem") or ""),
+                str(entry.get("taskStatus") or ""),
+                str(entry.get("ownerRole") or ""),
+                str(entry.get("targetObject") or ""),
+                " ".join(str(item) for item in entry.get("actionSteps") or []),
+                " ".join(str(item) for item in entry.get("acceptanceMetrics") or []),
+                " ".join(str(item) for item in entry.get("resultFeedback") or []),
+            ]))
+            score = min(sum(8 for token in tokens if norm(token) in haystack), 40)
+            return (["内容命中任务标题/动作/指标"] if score else []), score
+
+        results: list[dict] = []
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            if not include_needs_review and entry.get("qualityBand") == "needs_review":
+                continue
+            if task_module and str(entry.get("taskModule") or "") != task_module:
+                continue
+            if product_id and product_id not in str(entry.get("productId") or ""):
+                continue
+            if task_status and str(entry.get("taskStatus") or "") != task_status:
+                continue
+            role_ok, role_reasons, role_score = role_matches(entry)
+            if not role_ok:
+                continue
+            time_ok, time_reasons, time_score = time_matches(entry)
+            if not time_ok:
+                continue
+            text_reasons, score = text_score(entry)
+            quality = int(entry.get("qualityScore") or 0)
+            executable = int(entry.get("executableScore") or 0)
+            importance = int(entry.get("importanceScore") or 0)
+            ready_boost = 18 if entry.get("qualityBand") == "ready" else 0
+            rank_score = role_score + time_score + score + round(quality * 0.25 + executable * 0.2 + importance * 0.2) + ready_boost
+            result = dict(entry)
+            result["matchedReasons"] = role_reasons + time_reasons + text_reasons
+            result["rankScore"] = rank_score
+            results.append(result)
+
+        results.sort(key=lambda item: (item.get("rankScore", 0), item.get("qualityScore", 0)), reverse=True)
+        return {
+            "backend": "task-index",
+            "index_path": index_path.as_posix(),
+            "results": results[: max(1, min(limit, 50))],
+            "warnings": [],
         }
 
     def _evidence_from_hit(self, hit: SearchHit) -> EvidenceItem:

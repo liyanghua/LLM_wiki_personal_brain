@@ -8,12 +8,22 @@ export interface ActivityItem {
   detail: string
   filesWritten: string[]
   createdAt: number
+  phase?: string
+  batchId?: string
+  startedAtMs?: number
+  elapsedMs?: number
+  metrics?: {
+    taskCount?: number
+    ready?: number
+    needsReview?: number
+    averageQualityScore?: number
+  }
 }
 
 interface ActivityState {
   items: ActivityItem[]
   addItem: (item: Omit<ActivityItem, "id" | "createdAt">) => string
-  updateItem: (id: string, updates: Partial<Pick<ActivityItem, "status" | "detail" | "filesWritten">>) => void
+  updateItem: (id: string, updates: Partial<Omit<ActivityItem, "id" | "createdAt">>) => void
   appendDetail: (id: string, text: string) => void
   clearDone: () => void
 }
@@ -25,9 +35,10 @@ export const useActivityStore = create<ActivityState>((set) => ({
 
   addItem: (item) => {
     const id = `activity-${++counter}`
+    const createdAt = Date.now()
     set((state) => ({
       items: [
-        { ...item, id, createdAt: Date.now() },
+        { ...item, id, createdAt, startedAtMs: item.startedAtMs ?? createdAt },
         ...state.items,
       ],
     }))

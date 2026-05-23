@@ -115,12 +115,23 @@ class LiteLLMClient:
         return os.environ.get("OPENAI_BASE_URL")
 
     def _vendor_src_path(self) -> Path | None:
-        root = self.config.root.resolve()
-        candidate = root / "external" / "litellm"
-        if (candidate / "litellm").exists():
-            return candidate
-        if (candidate / "src" / "litellm").exists():
-            return candidate / "src"
+        candidates: list[Path] = []
+        explicit = os.environ.get("BRAIN_LITELLM_VENDOR_PATH")
+        if explicit:
+            candidates.append(Path(explicit).expanduser())
+        for root in [
+            self.config.root,
+            self.config.workspace_root,
+            Path.cwd(),
+            Path(__file__).resolve().parents[3],
+        ]:
+            if root is not None:
+                candidates.append(root.resolve() / "external" / "litellm")
+        for candidate in dict.fromkeys(candidates):
+            if (candidate / "litellm").exists():
+                return candidate
+            if (candidate / "src" / "litellm").exists():
+                return candidate / "src"
         return None
 
     def _load_completion(self):

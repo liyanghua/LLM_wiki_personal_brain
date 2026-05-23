@@ -47,9 +47,28 @@ fn resolve_python_binary() -> String {
     "python3".into()
 }
 
-fn repo_root_from_cwd() -> Result<PathBuf, String> {
+fn find_document_backend_script_from(cwd: &Path) -> Option<PathBuf> {
+    for ancestor in cwd.ancestors() {
+        let candidate = ancestor
+            .join("scripts")
+            .join("document_backend")
+            .join("prepare_document.py");
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+fn resolve_document_backend_script() -> Result<PathBuf, String> {
     let cwd = env::current_dir().map_err(|e| format!("failed to resolve current_dir: {e}"))?;
-    Ok(cwd)
+    find_document_backend_script_from(&cwd).ok_or_else(|| {
+        let expected = cwd
+            .join("scripts")
+            .join("document_backend")
+            .join("prepare_document.py");
+        format!("document backend script not found: {}", expected.display())
+    })
 }
 
 fn ensure_parent(path: &Path) -> Result<(), String> {
@@ -95,14 +114,7 @@ pub async fn analyze_document_with_backend(
             fs::create_dir_all(output_dir_path)
                 .map_err(|e| format!("failed to create document artifact dir: {e}"))?;
 
-            let repo_root = repo_root_from_cwd()?;
-            let script_path = repo_root
-                .join("scripts")
-                .join("document_backend")
-                .join("prepare_document.py");
-            if !script_path.exists() {
-                return Err(format!("document backend script not found: {}", script_path.display()));
-            }
+            let script_path = resolve_document_backend_script()?;
 
             let python = resolve_python_binary();
             let mut command = Command::new(python);
@@ -243,4 +255,33 @@ pub async fn convert_doc_to_docx(
     })
     .await
     .map_err(|e| format!("convert_doc_to_docx blocking task join error: {e}"))?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::find_document_backend_script_from;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn finds_document_backend_script_from_src_tauri_descendant() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("llmwiki-doc-backend-{unique}"));
+        let script = root
+            .join("scripts")
+            .join("document_backend")
+            .join("prepare_document.py");
+        fs::create_dir_all(script.parent().expect("script parent")).expect("create script dir");
+        fs::write(&script, "# test").expect("write script");
+        let nested = root.join("src-tauri").join("target").join("debug");
+        fs::create_dir_all(&nested).expect("create nested cwd");
+
+        let resolved = find_document_backend_script_from(&nested);
+
+        assert_eq!(resolved, Some(script));
+        let _ = fs::remove_dir_all(root);
+    }
 }

@@ -1,13 +1,17 @@
 import { useRef, useEffect, useCallback, useMemo, useState } from "react"
-import { BookOpen, Plus, Trash2, MessageSquare } from "lucide-react"
+import { BookOpen, ChevronDown, Plus, Trash2, MessageSquare } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ChatMessage, StreamingMessage, useSourceFiles } from "./chat-message"
 import { ChatInput } from "./chat-input"
 import {
   useChatStore,
   chatMessagesToLLM,
+  conversationMatchesScope,
+  shouldShowConversationInSidebar,
   type ComposerRequest,
   type ConversationStage,
+  type ChatImageEvidence,
+  type ChatTaskEvidence,
   type KnowledgeAnswerMeta,
   type RevisionChatContext,
   type DisplayMessage,
@@ -23,6 +27,24 @@ import { buildLanguageDirective, buildLanguageReminder } from "@/lib/output-lang
 import { isGreeting } from "@/lib/greeting-detector"
 import { computeContextBudget } from "@/lib/context-budget"
 import { searchKnowledgeWorkspace } from "@/lib/revision-aware-search"
+import {
+  buildKnowledgeImageEvidenceContext,
+  collectKnowledgeImageEvidence,
+  hasVisualQuestionIntent,
+} from "@/lib/knowledge-image-evidence"
+import {
+  formatImageEvidenceForPrompt,
+  type KnowledgeImageHit,
+  searchKnowledgeImages,
+} from "@/lib/knowledge-image-index"
+import { loadSemanticUnitIndex, semanticContextForQuery } from "@/lib/semantic-units"
+import {
+  formatTaskCardsForPrompt,
+  groupTaskSearchResults,
+  hasTaskListIntent,
+  searchTaskCards,
+  type TaskSearchResult,
+} from "@/lib/task-search"
 
 // Store the page mapping from the last query so SourceFilesBar can show which pages were cited
 export let lastQueryPages: { title: string; path: string }[] = []
@@ -69,6 +91,96 @@ function extractAnswerMeta(content: string): KnowledgeAnswerMeta | null {
   }
 }
 
+function toChatImageEvidence(hits: KnowledgeImageHit[]): ChatImageEvidence[] {
+  return hits.map((hit, index) => ({
+    imageId: hit.imageId,
+    displayId: `img-${index + 1}`,
+    relPath: hit.relPath,
+    caption: hit.caption || hit.fallbackCaption,
+    fallbackCaption: hit.fallbackCaption,
+    sourcePath: hit.sourcePath,
+    page: hit.page,
+    matchedReason: hit.matchedReason,
+    status: hit.status,
+    score: hit.score,
+  }))
+}
+
+function parseTaskSearchFilters(query: string): {
+  role?: string
+  startDate?: string
+  endDate?: string
+  taskModule?: "new_product_launch" | "existing_product_growth" | "visual_content" | "traffic_promotion" | "customer_conversion" | "creator_content" | "product_operations" | "unknown"
+  productId?: string
+  taskStatus?: "not_started" | "in_progress" | "blocked" | "done" | "deferred" | "unknown"
+  includeNeedsReview: boolean
+} {
+  const roleMatch = query.match(/([\u4e00-\u9fffA-Za-z0-9]{2,12}(?:负责人|主管|运营|店长|美工|推广|客服|助理|专员|经理|总监|角色|岗位))/)
+  const monthMatch = query.match(/(?:20\d{2}[年/-])?(\d{1,2})\s*月/)
+  const yearMatch = query.match(/(20\d{2})/)
+  const filters: {
+    role?: string
+    startDate?: string
+    endDate?: string
+    taskModule?: "new_product_launch" | "existing_product_growth" | "visual_content" | "traffic_promotion" | "customer_conversion" | "creator_content" | "product_operations" | "unknown"
+    productId?: string
+    taskStatus?: "not_started" | "in_progress" | "blocked" | "done" | "deferred" | "unknown"
+    includeNeedsReview: boolean
+  } = {
+    includeNeedsReview: true,
+  }
+  if (roleMatch?.[1]) filters.role = roleMatch[1]
+  if (monthMatch?.[1]) {
+    const year = yearMatch?.[1] ?? new Date().getFullYear().toString()
+    const month = monthMatch[1].padStart(2, "0")
+    filters.startDate = `${year}-${month}-01`
+    filters.endDate = `${year}-${month}-31`
+  }
+  if (/(新品|新链接|上新|上线)/.test(query)) filters.taskModule = "new_product_launch"
+  else if (/(老链接|存量|增长优化|存量商品)/.test(query)) filters.taskModule = "existing_product_growth"
+  else if (/(主图|视觉|内容|视频|拍摄|素材|卖点)/.test(query)) filters.taskModule = "visual_content"
+  else if (/(推广|流量|直通车|投流|关键词)/.test(query)) filters.taskModule = "traffic_promotion"
+  else if (/(客服|转化|话术|询单|催付)/.test(query)) filters.taskModule = "customer_conversion"
+  else if (/(达人|买家秀|种草)/.test(query)) filters.taskModule = "creator_content"
+  else if (/(编码|核价|上架|对接|库存|商品基础)/.test(query)) filters.taskModule = "product_operations"
+  const productMatch = query.match(/(?:商品|链接|ID|id|货号|sku)?\s*([1-9]\d{8,14})/)
+  if (productMatch?.[1]) filters.productId = productMatch[1]
+  if (/(已完成|完成|复盘结果)/.test(query)) filters.taskStatus = "done"
+  else if (/(执行中|进行中)/.test(query)) filters.taskStatus = "in_progress"
+  else if (/(延期|延后)/.test(query)) filters.taskStatus = "deferred"
+  else if (/(阻塞|卡住)/.test(query)) filters.taskStatus = "blocked"
+  else if (/(未开始|待开始)/.test(query)) filters.taskStatus = "not_started"
+  return filters
+}
+
+function toChatTaskEvidence(hits: TaskSearchResult[]): ChatTaskEvidence[] {
+  return hits.map((hit) => ({
+    taskId: hit.entry.taskId,
+    title: hit.entry.title,
+    taskModule: hit.entry.taskModule,
+    taskModuleLabel: hit.entry.taskModuleLabel,
+    productId: hit.entry.productId,
+    taskItem: hit.entry.taskItem,
+    taskStatus: hit.entry.taskStatus,
+    resultFeedback: hit.entry.resultFeedback,
+    ownerRole: hit.entry.ownerRole,
+    collaboratorRoles: hit.entry.collaboratorRoles,
+    timeRangeLabel: hit.entry.timeRange.label,
+    cadence: hit.entry.cadence,
+    priority: hit.entry.priority,
+    qualityScore: hit.entry.qualityScore,
+    executableScore: hit.entry.executableScore,
+    importanceScore: hit.entry.importanceScore,
+    status: hit.entry.status,
+    qualityBand: hit.qualityBand,
+    matchedReasons: hit.matchedReasons,
+    missingElements: hit.entry.missingElements,
+    reviewNotes: hit.entry.reviewNotes ?? [],
+    sourceRefs: hit.entry.sourceRefs,
+    wikiRefs: hit.entry.wikiRefs,
+  }))
+}
+
 interface ChatPanelProps {
   mode?: "default" | "revision-aware" | "revision-loop"
   revisionContext?: RevisionChatContext
@@ -112,27 +224,23 @@ function ConversationSidebar({
 
   const [hoveredId, setHoveredId] = useState<string | null>(null)
 
-  const scopedConversations = conversations.filter((conversation) => {
-    if (!scope) return true
-    if ((conversation.scope ?? "global") !== scope) return false
-    if (scope === "revision-workbench" && docId) {
-      return (conversation.docId ?? null) === docId
-    }
-    if (scope === "revision-loop" && docId) {
-      return (conversation.docId ?? null) === docId
-        && (conversation.loopId ?? null) === (loopId ?? null)
-    }
-    return true
-  })
-  const sorted = [...scopedConversations].sort((a, b) => b.updatedAt - a.updatedAt)
-
   function getMessageCount(convId: string): number {
     return messages.filter((m) => m.conversationId === convId).length
   }
 
+  const scopedConversations = conversations.filter((conversation) => {
+    if (scope && !conversationMatchesScope(conversation, scope, { docId, loopId })) return false
+    return shouldShowConversationInSidebar(conversation, getMessageCount(conversation.id))
+  })
+  const sorted = [...scopedConversations].sort((a, b) => b.updatedAt - a.updatedAt)
+
   return (
-    <div className="flex h-full w-[200px] flex-shrink-0 flex-col border-r bg-muted/30">
-      <div className="border-b p-2">
+    <div className="flex h-full w-[236px] flex-shrink-0 flex-col border-r bg-muted/30">
+      <div className="border-b p-3">
+        <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-foreground">
+          <MessageSquare className="h-3.5 w-3.5 text-muted-foreground" />
+          历史会话
+        </div>
         <Button
           variant="outline"
           size="sm"
@@ -152,8 +260,10 @@ function ConversationSidebar({
 
       <div className="flex-1 overflow-y-auto py-1">
         {sorted.length === 0 ? (
-          <p className="px-3 py-4 text-xs text-muted-foreground text-center">
-            还没有会话
+          <p className="px-4 py-5 text-center text-xs leading-5 text-muted-foreground">
+            {scope === "global"
+              ? "暂无历史会话，发送问题后会自动保存"
+              : "当前范围暂无会话"}
           </p>
         ) : (
           sorted.map((conv) => {
@@ -226,9 +336,13 @@ export function ChatPanel({
   const activeConversationId = useChatStore((s) => s.activeConversationId)
   const isStreaming = useChatStore((s) => s.isStreaming)
   const streamingContent = useChatStore((s) => s.streamingContent)
+  const streamingImageEvidence = useChatStore((s) => s.streamingImageEvidence)
+  const streamingTaskEvidence = useChatStore((s) => s.streamingTaskEvidence)
   const mode = useChatStore((s) => s.mode)
   const addMessage = useChatStore((s) => s.addMessage)
   const setStreaming = useChatStore((s) => s.setStreaming)
+  const setStreamingImageEvidence = useChatStore((s) => s.setStreamingImageEvidence)
+  const setStreamingTaskEvidence = useChatStore((s) => s.setStreamingTaskEvidence)
   const appendStreamToken = useChatStore((s) => s.appendStreamToken)
   const finalizeStream = useChatStore((s) => s.finalizeStream)
   const createConversation = useChatStore((s) => s.createConversation)
@@ -250,31 +364,38 @@ export function ChatPanel({
       : panelMode === "revision-loop"
         ? "revision-loop"
         : "global"
-  const visibleConversationIds = useMemo(
+  const scopeConversationIds = useMemo(
     () =>
       new Set(
         conversations
-          .filter((conversation) => {
-            const scope = conversation.scope ?? "global"
-            if (scope !== expectedScope) return false
-            if (expectedScope === "revision-workbench" && revisionContext?.docId) {
-              return (conversation.docId ?? null) === revisionContext.docId
-            }
-            if (expectedScope === "revision-loop" && revisionContext?.docId) {
-              return (conversation.docId ?? null) === revisionContext.docId
-                && (conversation.loopId ?? null) === (revisionContext.loopId ?? null)
-            }
-            return true
-          })
+          .filter((conversation) =>
+            conversationMatchesScope(conversation, expectedScope, {
+              docId: revisionContext?.docId ?? null,
+              loopId: revisionContext?.loopId ?? null,
+            })
+          )
           .map((conversation) => conversation.id),
       ),
     [conversations, expectedScope, revisionContext?.docId, revisionContext?.loopId],
   )
+  const sidebarConversationIds = useMemo(
+    () =>
+      new Set(
+        conversations
+          .filter((conversation) => {
+            if (!scopeConversationIds.has(conversation.id)) return false
+            const messageCount = allMessages.filter((message) => message.conversationId === conversation.id).length
+            return shouldShowConversationInSidebar(conversation, messageCount)
+          })
+          .map((conversation) => conversation.id),
+      ),
+    [allMessages, conversations, scopeConversationIds],
+  )
   const hasScopedActiveConversation = activeConversationId
-    ? visibleConversationIds.has(activeConversationId)
+    ? scopeConversationIds.has(activeConversationId)
     : false
   const activeMessages = activeConversationId
-    ? allMessages.filter((m) => m.conversationId === activeConversationId && visibleConversationIds.has(m.conversationId))
+    ? allMessages.filter((m) => m.conversationId === activeConversationId && scopeConversationIds.has(m.conversationId))
     : []
 
   const project = useWikiStore((s) => s.project)
@@ -284,6 +405,10 @@ export function ChatPanel({
   const abortRef = useRef<AbortController | null>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const shouldStickToBottomRef = useRef(true)
+  const pendingStreamTokenRef = useRef("")
+  const streamFlushTimerRef = useRef<number | null>(null)
+  const [showJumpToBottom, setShowJumpToBottom] = useState(false)
   const readyComposerRequest = useMemo(() => {
     if (!composerRequest) return null
     if (panelMode !== "revision-aware") return composerRequest
@@ -294,13 +419,66 @@ export function ChatPanel({
       : null
   }, [composerRequest, panelMode, revisionContext?.revisionSnapshotKey])
 
-  // Auto-scroll to bottom when messages change or streaming content updates
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = "auto") => {
+    const container = scrollContainerRef.current
+    if (!container) return
+    container.scrollTo({ top: container.scrollHeight, behavior })
+  }, [])
+
+  const updateBottomStickiness = useCallback(() => {
+    const container = scrollContainerRef.current
+    if (!container) return
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight
+    const nearBottom = distanceFromBottom < 96
+    shouldStickToBottomRef.current = nearBottom
+    setShowJumpToBottom(!nearBottom && isStreaming)
+  }, [isStreaming])
+
   useEffect(() => {
     const container = scrollContainerRef.current
-    if (container) {
-      container.scrollTop = container.scrollHeight
+    if (!container) return
+    container.addEventListener("scroll", updateBottomStickiness, { passive: true })
+    updateBottomStickiness()
+    return () => container.removeEventListener("scroll", updateBottomStickiness)
+  }, [updateBottomStickiness])
+
+  useEffect(() => {
+    if (shouldStickToBottomRef.current) {
+      requestAnimationFrame(() => scrollToBottom("auto"))
+      setShowJumpToBottom(false)
+    } else if (isStreaming) {
+      setShowJumpToBottom(true)
     }
-  }, [activeMessages, streamingContent])
+  }, [activeMessages.length, isStreaming, scrollToBottom, streamingContent, streamingImageEvidence, streamingTaskEvidence])
+
+  const flushPendingStreamTokens = useCallback(() => {
+    if (streamFlushTimerRef.current !== null) {
+      window.clearTimeout(streamFlushTimerRef.current)
+      streamFlushTimerRef.current = null
+    }
+    const pending = pendingStreamTokenRef.current
+    if (!pending) return
+    pendingStreamTokenRef.current = ""
+    appendStreamToken(pending)
+  }, [appendStreamToken])
+
+  const queueStreamToken = useCallback((token: string) => {
+    pendingStreamTokenRef.current += token
+    if (streamFlushTimerRef.current !== null) return
+    streamFlushTimerRef.current = window.setTimeout(() => {
+      streamFlushTimerRef.current = null
+      const pending = pendingStreamTokenRef.current
+      if (!pending) return
+      pendingStreamTokenRef.current = ""
+      appendStreamToken(pending)
+    }, 60)
+  }, [appendStreamToken])
+
+  useEffect(() => () => {
+    if (streamFlushTimerRef.current !== null) {
+      window.clearTimeout(streamFlushTimerRef.current)
+    }
+  }, [])
 
   useEffect(() => {
     if ((panelMode !== "revision-aware" && panelMode !== "revision-loop") || !project || !revisionContext?.docId) return
@@ -335,6 +513,15 @@ export function ChatPanel({
     setActiveConversation,
   ])
 
+  useEffect(() => {
+    if (panelMode !== "default") return
+    if (!activeConversationId || scopeConversationIds.has(activeConversationId)) return
+    const latestGlobalConversation = conversations
+      .filter((conversation) => sidebarConversationIds.has(conversation.id))
+      .sort((a, b) => b.updatedAt - a.updatedAt)[0]
+    setActiveConversation(latestGlobalConversation?.id ?? null)
+  }, [activeConversationId, conversations, panelMode, scopeConversationIds, setActiveConversation, sidebarConversationIds])
+
   const handleCreateConversation = useCallback(() => {
     if ((panelMode === "revision-aware" || panelMode === "revision-loop") && revisionContext?.docId) {
       const convId = ensureScopedConversation(panelMode === "revision-loop" ? "统一修订线程" : "修订后知识验证", {
@@ -358,7 +545,7 @@ export function ChatPanel({
     async (text: string) => {
       // Auto-create a conversation if none is active
       let convId = useChatStore.getState().activeConversationId
-      if (!convId || ((panelMode === "revision-aware" || panelMode === "revision-loop") && !hasScopedActiveConversation)) {
+      if (!convId || !scopeConversationIds.has(convId)) {
         convId = (panelMode === "revision-aware" || panelMode === "revision-loop") && revisionContext?.docId
           ? ensureScopedConversation(panelMode === "revision-loop" ? "统一修订线程" : "修订后知识验证", {
               scope: panelMode === "revision-loop" ? "revision-loop" : "revision-workbench",
@@ -368,16 +555,23 @@ export function ChatPanel({
           : createConversation()
       }
 
+      shouldStickToBottomRef.current = true
+      setShowJumpToBottom(false)
       addMessage("user", text, { conversationId: convId })
+      requestAnimationFrame(() => scrollToBottom("auto"))
       if (panelMode === "revision-loop") {
         await onSendInRevisionLoop?.(text, convId)
         return
       }
       setStreaming(true)
+      setStreamingImageEvidence([])
+      setStreamingTaskEvidence([])
 
       // Build system prompt with wiki context using graph-enhanced retrieval
       const systemMessages: LLMMessage[] = []
       let queryRefs: { title: string; path: string }[] = []
+      let queryImageEvidence: ChatImageEvidence[] = []
+      let queryTaskEvidence: ChatTaskEvidence[] = []
       let langReminder: string | undefined
       // Pure greetings ("hi", "你好", "嗨") don't warrant running the whole
       // retrieval pipeline — it's slow, costs context, and drags in random
@@ -401,6 +595,18 @@ export function ChatPanel({
       } else if (project) {
         const pp = normalizePath(project.path)
         const dataVersion = useWikiStore.getState().dataVersion
+        const taskHits = hasTaskListIntent(text)
+          ? await searchTaskCards(pp, text, parseTaskSearchFilters(text)).catch((err) => {
+              console.warn("[chat:task-index] failed", err)
+              return []
+            })
+          : []
+        const groupedTaskHits = groupTaskSearchResults(taskHits)
+        queryTaskEvidence = toChatTaskEvidence(groupedTaskHits.ordered)
+        if (queryTaskEvidence.length > 0) {
+          setStreamingTaskEvidence(queryTaskEvidence)
+        }
+        const taskEvidenceContext = formatTaskCardsForPrompt(groupedTaskHits.ordered)
 
         // ── Budget allocation (see context-budget.ts) ─────────
         // Page budget scales with the LLM's context window; we now
@@ -437,6 +643,27 @@ export function ChatPanel({
             selectedTargetFieldKey: revisionContext.selectedTargetFieldKey ?? null,
             lastAcceptedCardId: revisionContext.lastAcceptedCardId ?? null,
           })
+          if (hasVisualQuestionIntent(text)) {
+            const imageHits = await searchKnowledgeImages(pp, text, { limit: 8 }).catch((err) => {
+              console.warn("[chat:revision-image-index] failed", err)
+              return []
+            })
+            queryImageEvidence = toChatImageEvidence(imageHits)
+            if (queryImageEvidence.length > 0) {
+              setStreamingImageEvidence(queryImageEvidence)
+            }
+          }
+          const semanticContext = semanticContextForQuery(
+            await loadSemanticUnitIndex(pp).catch(() => ({
+              schemaVersion: "semantic_units_v1" as const,
+              projectId: "local-project",
+              generatedAt: new Date().toISOString(),
+              units: [],
+              relations: [],
+              conflicts: [],
+            })),
+            text,
+          )
 
           systemMessages.push({
             role: "system",
@@ -465,6 +692,11 @@ export function ChatPanel({
               "- 若给出“可纳入修订的建议句”，必须明确说这是一条待专家确认的候选表达。",
               "- If the current document does not cover the question, say so clearly before using broader wiki context.",
               "- Use [[wikilink]] syntax when referring to wiki pages.",
+              "- If the user asks about visual design, image details, examples, layout, composition, or hero-image improvement AND Image Evidence exists, include a section named `图片案例`.",
+              "- In `图片案例`, embed the relevant images directly using the provided Markdown lines from Image Evidence, then explain what design detail each image supports.",
+              "- Do not invent image URLs. Only use images listed in Image Evidence.",
+              "- If Task Cards are provided, answer with a `任务卡列表` section first. Do not invent tasks beyond the provided Task Cards.",
+              "- For task cards, explain quality status, missing elements, owner, time, priority, and acceptance metrics.",
               "- At the VERY END of your response, add a hidden comment listing which references you used:",
               "  <!-- cited: 1, 2 -->",
               "- If you provide any 启发性补充, append one more hidden comment at the VERY END after cited refs:",
@@ -476,6 +708,8 @@ export function ChatPanel({
               revisionContext.selectedCardTitle ? `## 当前问题卡\n${revisionContext.selectedCardTitle}` : "",
               revisionContext.selectedCardDiagnosis ? `## 当前问题卡诊断\n${revisionContext.selectedCardDiagnosis}` : "",
               revisionContext.groundTruthSummary ? `## 当前业务底稿摘要\n${revisionContext.groundTruthSummary}` : "",
+              semanticContext,
+              taskEvidenceContext ? `## Task Cards\n\n${taskEvidenceContext}` : "",
               ...retrieval.promptSections,
             ].filter(Boolean).join("\n"),
           })
@@ -485,6 +719,13 @@ export function ChatPanel({
             path: ref.path,
           }))
           queryRefs = retrieval.references
+          for (const task of queryTaskEvidence) {
+            for (const wikiRef of task.wikiRefs) {
+              if (!queryRefs.some((ref) => ref.path === wikiRef)) {
+                queryRefs.push({ title: task.title, path: wikiRef })
+              }
+            }
+          }
           langReminder = buildLanguageReminder(languageSeed)
         } else {
 
@@ -584,6 +825,38 @@ export function ChatPanel({
             ).join("\n\n---\n\n")
           : "(No wiki pages found)"
 
+        const imageEvidence = collectKnowledgeImageEvidence(
+          text,
+          topSearchResults,
+          relevantPages,
+          pp,
+        )
+        const indexedImageHits = hasVisualQuestionIntent(text)
+          ? await searchKnowledgeImages(pp, text, { limit: 8 }).catch((err) => {
+              console.warn("[chat:image-index] failed", err)
+              return []
+            })
+          : []
+        queryImageEvidence = toChatImageEvidence(indexedImageHits)
+        if (queryImageEvidence.length > 0) {
+          setStreamingImageEvidence(queryImageEvidence)
+        }
+        const imageEvidenceContext = [
+          buildKnowledgeImageEvidenceContext(imageEvidence),
+          formatImageEvidenceForPrompt(indexedImageHits),
+        ].filter(Boolean).join("\n\n")
+        const semanticContext = semanticContextForQuery(
+          await loadSemanticUnitIndex(pp).catch(() => ({
+            schemaVersion: "semantic_units_v1" as const,
+            projectId: "local-project",
+            generatedAt: new Date().toISOString(),
+            units: [],
+            relations: [],
+            conflicts: [],
+          })),
+          text,
+        )
+
         const pageList = relevantPages.map((p, i) =>
           `[${i + 1}] ${p.title} (${p.path})`
         ).join("\n")
@@ -608,6 +881,11 @@ export function ChatPanel({
             "- If the provided pages don't contain enough information, say so honestly.",
             "- Use [[wikilink]] syntax to reference wiki pages.",
             "- When citing information, use the page number in brackets, e.g. [1], [2].",
+            "- If the user asks about visual design, image details, examples, layout, composition, or hero-image improvement AND Image Evidence exists, include a section named `图片案例`.",
+            "- In `图片案例`, embed the relevant images directly using the provided Markdown lines from Image Evidence, then explain what design detail each image supports.",
+            "- Do not invent image URLs. Only use images listed in Image Evidence.",
+            "- If Task Cards are provided, answer with a `任务卡列表` section first. Do not invent tasks beyond the provided Task Cards.",
+            "- For task cards, explain quality status, missing elements, owner, time, priority, and acceptance metrics.",
             "- At the VERY END of your response, add a hidden comment listing which page numbers you used:",
             "  <!-- cited: 1, 3, 5 -->",
             "",
@@ -616,6 +894,9 @@ export function ChatPanel({
             purpose ? `## Wiki Purpose\n${purpose}` : "",
             index ? `## Wiki Index\n${index}` : "",
             relevantPages.length > 0 ? `## Page List\n${pageList}` : "",
+            imageEvidenceContext ? `## Image Evidence\n\n${imageEvidenceContext}` : "",
+            taskEvidenceContext ? `## Task Cards\n\n${taskEvidenceContext}` : "",
+            semanticContext,
             `## Wiki Pages\n\n${pagesContext}`,
           ].filter(Boolean).join("\n"),
         })
@@ -625,7 +906,21 @@ export function ChatPanel({
         langReminder = buildLanguageReminder(languageSeed)
 
         lastQueryPages = relevantPages.map((p) => ({ title: p.title, path: p.path }))
-        queryRefs = [...lastQueryPages]
+        const imageRefs = imageEvidence
+          .map((item) => ({ title: item.sourcePageTitle, path: item.sourcePagePath }))
+          .filter((ref) => !lastQueryPages.some((page) => page.path === ref.path))
+        const indexedImageRefs = indexedImageHits
+          .map((item) => ({ title: item.sourceSlug, path: item.sourcePath }))
+          .filter((ref) => !lastQueryPages.some((page) => page.path === ref.path))
+          .filter((ref) => !imageRefs.some((page) => page.path === ref.path))
+        queryRefs = [...lastQueryPages, ...imageRefs, ...indexedImageRefs]
+        for (const task of queryTaskEvidence) {
+          for (const wikiRef of task.wikiRefs) {
+            if (!queryRefs.some((ref) => ref.path === wikiRef)) {
+              queryRefs.push({ title: task.title, path: wikiRef })
+            }
+          }
+        }
         }
       }
 
@@ -667,16 +962,18 @@ export function ChatPanel({
         {
           onToken: (token) => {
             accumulated += token
-            appendStreamToken(token)
+            queueStreamToken(token)
           },
           onDone: () => {
+            flushPendingStreamTokens()
             const answerMeta = panelMode === "revision-aware" ? extractAnswerMeta(accumulated) : null
-            finalizeStream(stripHiddenAnswerMeta(accumulated), queryRefs, answerMeta)
+            finalizeStream(stripHiddenAnswerMeta(accumulated), queryRefs, answerMeta, queryImageEvidence, queryTaskEvidence)
             abortRef.current = null
             // save-worthy detection removed — user has direct "Save to Wiki" button on each message
           },
           onError: (err) => {
-            finalizeStream(`Error: ${err.message}`, undefined)
+            flushPendingStreamTokens()
+            finalizeStream(`Error: ${err.message}`, undefined, null, [], [])
             abortRef.current = null
           },
         },
@@ -686,9 +983,13 @@ export function ChatPanel({
     [
       llmConfig,
       addMessage,
+      flushPendingStreamTokens,
       setStreaming,
-      appendStreamToken,
       finalizeStream,
+      setStreamingImageEvidence,
+      setStreamingTaskEvidence,
+      queueStreamToken,
+      scrollToBottom,
       createConversation,
       ensureScopedConversation,
       hasScopedActiveConversation,
@@ -797,31 +1098,47 @@ export function ChatPanel({
           </div>
         ) : (
           <>
-            <div
-              ref={scrollContainerRef}
-              className={`min-h-0 flex-1 overflow-y-auto px-3 ${panelMode === "revision-aware" ? "py-3" : "py-2"}`}
-            >
-              <div className="flex flex-col gap-3">
-                {activeMessages.map((msg, idx) => {
-                  // Check if this is the last assistant message
-                  const isLastAssistant = msg.role === "assistant" &&
-                    !activeMessages.slice(idx + 1).some((m) => m.role === "assistant")
-                  return (
-                    <ChatMessage
-                      key={msg.id}
-                      message={msg}
-                      mode={panelMode}
-                      isLastAssistant={isLastAssistant && !isStreaming}
-                      onRegenerate={isLastAssistant ? handleRegenerate : undefined}
-                      onAcceptSuggestion={onAcceptSuggestion}
-                      onRequestStageSwitch={onRequestStageSwitch}
-                      onSendFollowup={onPrepareFollowup}
-                    />
-                  )
-                })}
-                {isStreaming && <StreamingMessage content={streamingContent} />}
-                <div ref={bottomRef} />
+            <div className="relative min-h-0 flex-1">
+              <div
+                ref={scrollContainerRef}
+                className={`h-full overflow-y-auto px-3 ${panelMode === "revision-aware" ? "py-3" : "py-2"}`}
+              >
+                <div className="flex flex-col gap-3">
+                  {activeMessages.map((msg, idx) => {
+                    // Check if this is the last assistant message
+                    const isLastAssistant = msg.role === "assistant" &&
+                      !activeMessages.slice(idx + 1).some((m) => m.role === "assistant")
+                    return (
+                      <ChatMessage
+                        key={msg.id}
+                        message={msg}
+                        mode={panelMode}
+                        isLastAssistant={isLastAssistant && !isStreaming}
+                        onRegenerate={isLastAssistant ? handleRegenerate : undefined}
+                        onAcceptSuggestion={onAcceptSuggestion}
+                        onRequestStageSwitch={onRequestStageSwitch}
+                        onSendFollowup={onPrepareFollowup}
+                      />
+                    )
+                  })}
+                  {isStreaming && <StreamingMessage content={streamingContent} imageEvidence={streamingImageEvidence} taskEvidence={streamingTaskEvidence} />}
+                  <div ref={bottomRef} />
+                </div>
               </div>
+              {showJumpToBottom ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    shouldStickToBottomRef.current = true
+                    setShowJumpToBottom(false)
+                    scrollToBottom("smooth")
+                  }}
+                  className="absolute bottom-3 left-1/2 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-sky-200 bg-white/95 px-3 py-1.5 text-xs font-medium text-sky-800 shadow-lg backdrop-blur transition hover:bg-sky-50"
+                >
+                  <ChevronDown className="h-3.5 w-3.5" />
+                  有新内容，回到底部
+                </button>
+              ) : null}
             </div>
 
             {showWriteButton && (

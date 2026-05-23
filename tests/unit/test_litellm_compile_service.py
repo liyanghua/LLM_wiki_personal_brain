@@ -181,6 +181,17 @@ def test_litellm_provider_config_checks_model_prefix(monkeypatch) -> None:
     assert openrouter_client._provider_configured("openrouter/qwen/qwen3-235b-a22b-2507")
 
 
+def test_litellm_client_finds_repo_vendor_when_workspace_root_is_project(tmp_path) -> None:
+    from personal_brain.llm.litellm_client import LiteLLMClient
+
+    client = LiteLLMClient(BrainConfig(root=tmp_path, workspace_root=tmp_path))
+
+    vendor_path = client._vendor_src_path()
+
+    assert vendor_path is not None
+    assert (vendor_path / "litellm").exists()
+
+
 def test_litellm_client_falls_back_to_openrouter_after_dashscope_failure(monkeypatch) -> None:
     from personal_brain.llm.litellm_client import LiteLLMClient
 

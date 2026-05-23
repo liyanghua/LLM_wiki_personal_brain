@@ -5,6 +5,11 @@ import { hasUsableLlm } from "@/lib/has-usable-llm"
 import { buildSceneCompileArtifacts } from "@/lib/scene-compile"
 import { enhancePdfDocument } from "@/lib/pdf-enhanced"
 import { detectSourceKind } from "@/lib/document-preparation"
+import {
+  buildTaskContextPack,
+  extractTaskDocumentBlocks,
+  extractWorkbookIRFromMarkdown,
+} from "@/lib/task-context-pack"
 import type { LlmConfig } from "@/stores/wiki-store"
 import { useWikiStore } from "@/stores/wiki-store"
 import type {
@@ -51,6 +56,7 @@ interface RunStructuringInput {
   llmConfig: LlmConfig
   signal?: AbortSignal
   preparedDocumentArtifact?: PreparedDocumentArtifact | null
+  skipLlmRefinement?: boolean
 }
 
 type StructuringJson = Partial<{
@@ -91,6 +97,10 @@ type StructuringJson = Partial<{
 
 function isHeroImageScene(scenePack: ScenePack): boolean {
   return scenePack.manifest.scene_id === "ecom_growth_hero_image"
+}
+
+function isTaskGenerationScene(scenePack: ScenePack): boolean {
+  return scenePack.manifest.scene_id === "ecom_growth_task_generation"
 }
 
 function readSceneFields(scenePack: ScenePack): Array<{ key: string; label: string; required: boolean; cues: string[] }> {
@@ -1580,6 +1590,40 @@ function toPreparedPdfArtifact(result: Awaited<ReturnType<typeof enhancePdfDocum
   }
 }
 
+function compactIngestTextForStructuring(text: string, maxChars = 120_000): string {
+  if (text.length <= maxChars) return text
+  const lines = text.replace(/\r\n/g, "\n").split("\n")
+  const keep: string[] = []
+  const sheetRowCounts = new Map<string, number>()
+  let currentSection = ""
+  for (const line of lines) {
+    const heading = line.match(/^#{1,3}\s+(.+)$/)
+    if (heading) {
+      currentSection = heading[1]
+      keep.push(line)
+      continue
+    }
+    const trimmed = line.trim()
+    const isTableRow = trimmed.startsWith("|") && trimmed.endsWith("|")
+    if (isTableRow) {
+      const count = sheetRowCounts.get(currentSection) ?? 0
+      if (count < 80 || /(负责人|owner|任务|行动|计划|指标|验收|状态|反馈|商品|链接|岗位|职责|KPI|权重|协同|问题|复盘)/i.test(line)) {
+        keep.push(line)
+      }
+      sheetRowCounts.set(currentSection, count + 1)
+      continue
+    }
+    if (trimmed.length === 0 || /(负责人|owner|任务|行动|计划|指标|验收|状态|反馈|商品|链接|岗位|职责|KPI|权重|协同|问题|复盘|目标|A1|A2)/i.test(trimmed)) {
+      keep.push(line)
+    }
+    if (keep.join("\n").length >= maxChars) break
+  }
+  const compacted = keep.join("\n")
+  return compacted.length > maxChars
+    ? `${compacted.slice(0, maxChars)}\n\n<!-- structuring input truncated for memory safety -->`
+    : `${compacted}\n\n<!-- structuring input compacted from ${text.length} chars for memory safety -->`
+}
+
 export function buildStructuredContext(report: AgentModeReport, scenePack: ScenePack): string {
   const fieldSummary = report.fieldAssessments
     .map((assessment) => `- ${assessment.label}: ${assessment.status}（${assessment.rationale}）`)
@@ -1625,6 +1669,9 @@ export function buildStructuredContext(report: AgentModeReport, scenePack: Scene
 export async function runStep15Structuring(input: RunStructuringInput): Promise<AgentModeReport> {
   const isPdf = input.sourcePath.toLowerCase().endsWith(".pdf")
   const sourceKind = input.preparedDocumentArtifact?.sourceKind ?? detectSourceKind(input.sourcePath)
+  const preparedAnalysisForTasks = compactIngestTextForStructuring(input.preparedDocumentArtifact?.analysisMarkdown ?? "", 120_000)
+  const sourceContentForTasks = compactIngestTextForStructuring(input.sourceContent, 80_000)
+  const analysisForTasks = compactIngestTextForStructuring(input.analysis, 60_000)
   const preferredPdfBackend = useWikiStore.getState().pdfBackendMode
   const fallbackIr = buildDocumentIR(input.projectPath, input.sourcePath, input.sourceContent)
   const enhancedDocument = input.preparedDocumentArtifact ?? (isPdf
@@ -1645,10 +1692,12 @@ export async function runStep15Structuring(input: RunStructuringInput): Promise<
     input.scenePack,
   )
   const fallbackFields = buildFieldValues(ir, fallbackUnderstanding, input.scenePack)
-  const refined = await refineWithLlm(input, {
-    understanding: fallbackUnderstanding,
-    fields: fallbackFields,
-  })
+  const refined = input.skipLlmRefinement
+    ? null
+    : await refineWithLlm(input, {
+        understanding: fallbackUnderstanding,
+        fields: fallbackFields,
+      })
   const merged = mergeLlmRefinement(
     { understanding: fallbackUnderstanding, fields: fallbackFields },
     refined,
@@ -1688,6 +1737,24 @@ export async function runStep15Structuring(input: RunStructuringInput): Promise<
     warnings.push(`${sourceKind.toUpperCase()} 增强理解已降级：${enhancedDocument.backendStatus.detail}`)
   } else if (enhancedDocument?.backendStatus.detail) {
     warnings.push(`${sourceKind.toUpperCase()} 增强理解已启用：${enhancedDocument.backendStatus.detail}`)
+  }
+  const taskContextPack = isTaskGenerationScene(input.scenePack)
+    ? buildTaskContextPack({
+        docId: ir.docId,
+        sourcePath: ir.sourcePath,
+        sourceName: ir.sourceName,
+        sourceKind,
+        workbook: extractWorkbookIRFromMarkdown({
+          docId: ir.docId,
+          sourcePath: ir.sourcePath,
+          sourceName: ir.sourceName,
+          markdown: [preparedAnalysisForTasks, sourceContentForTasks, analysisForTasks].filter(Boolean).join("\n\n"),
+        }),
+        documentBlocks: extractTaskDocumentBlocks(ir),
+      })
+    : null
+  if (taskContextPack?.qualityWarnings.length) {
+    warnings.push(...taskContextPack.qualityWarnings.map((item) => `任务上下文提示：${item}`))
   }
   const compileArtifacts = buildSceneCompileArtifacts({
     docId: ir.docId,
@@ -1737,6 +1804,7 @@ export async function runStep15Structuring(input: RunStructuringInput): Promise<
     },
     compileIr: {
       sourceSummary: "",
+      taskContextPack,
       mainlineSteps: [],
       sopSteps: [],
       keyJudgements: [],
@@ -1767,6 +1835,7 @@ export async function runStep15Structuring(input: RunStructuringInput): Promise<
     },
     documentArtifacts: enhancedDocument?.artifactManifest ?? null,
     pdfArtifacts: sourceKind === "pdf" ? enhancedDocument?.artifactManifest ?? null : null,
+    taskContextPack,
   }, input.scenePack)
   const report: AgentModeReport = {
     docId: ir.docId,
@@ -1812,6 +1881,7 @@ export async function runStep15Structuring(input: RunStructuringInput): Promise<
     },
     documentArtifacts: enhancedDocument?.artifactManifest ?? null,
     pdfArtifacts: sourceKind === "pdf" ? enhancedDocument?.artifactManifest ?? null : null,
+    taskContextPack,
   }
   report.compileSidecar.compilePlan = compileArtifacts.plan
   report.compileSidecar.compileCoverage = compileArtifacts.compileCoverage

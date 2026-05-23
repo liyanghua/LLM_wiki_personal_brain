@@ -40,6 +40,27 @@
 import type { LlmConfig } from "@/stores/wiki-store"
 import { streamChat, type ChatMessage } from "./llm-client"
 
+export type CaptionFailureCode =
+  | "invalid_api_key"
+  | "network_error"
+  | "model_unavailable"
+  | "image_not_supported"
+  | "empty_caption"
+  | "unknown"
+
+export interface CaptionFailureDiagnosis {
+  code: CaptionFailureCode
+  title: string
+  detail: string
+  recommendedAction: string
+  retryable: boolean
+}
+
+export interface CaptionPreflightResult {
+  ok: boolean
+  diagnosis?: CaptionFailureDiagnosis
+}
+
 /**
  * The "no surrounding text" prompt — same factual / verbatim /
  * no-speculation framing we've used since Phase 3a. Used when the
@@ -134,6 +155,109 @@ export interface CaptionOptions {
    */
   contextBefore?: string
   contextAfter?: string
+}
+
+export function classifyCaptionFailure(error: unknown, config?: Pick<LlmConfig, "customEndpoint" | "provider">): CaptionFailureDiagnosis {
+  const raw = error instanceof Error ? error.message : String(error)
+  const endpoint = config?.customEndpoint ?? ""
+  const isDashScope = /dashscope/i.test(endpoint)
+  const regionHint = isDashScope
+    ? "如果使用 DashScope，请确认 API Key 与 endpoint 区域一致：国际站 Singapore 使用 dashscope-intl.aliyuncs.com，中国站/百炼使用 dashscope.aliyuncs.com。"
+    : "请确认 API key、endpoint 和模型权限配置正确。"
+
+  if (
+    /401|invalid_api_key|incorrect api key|api key|unauthorized|authentication/i.test(raw)
+  ) {
+    return {
+      code: "invalid_api_key",
+      title: "模型 Key 不可用",
+      detail: `VLM 服务返回鉴权失败。${regionHint}`,
+      recommendedAction: "请重新检查多模态/VLM 的 API Key 与 endpoint 区域，保存后先运行单张图片说明测试。",
+      retryable: false,
+    }
+  }
+  if (/network error|fetch failed|load failed|connection|timed out|timeout/i.test(raw)) {
+    return {
+      code: "network_error",
+      title: "无法连接到 VLM 服务",
+      detail: "当前网络或 endpoint 无法访问，图片说明请求没有成功发到模型服务。",
+      recommendedAction: "请检查 endpoint、代理/网络连接；如果刚改过代理，需要重启应用后再试。",
+      retryable: true,
+    }
+  }
+  if (/404|not found|model.*not.*exist|model.*not.*found|does not exist/i.test(raw)) {
+    return {
+      code: "model_unavailable",
+      title: "模型不可用",
+      detail: "当前配置的 VLM 模型名称不存在，或这个 Key 没有该模型的调用权限。",
+      recommendedAction: "请在设置中换成可用的视觉模型，并确认账号已开通模型权限。",
+      retryable: false,
+    }
+  }
+  if (/image|vision|multimodal|unsupported|content.*array|image_url|invalid.*image/i.test(raw)) {
+    return {
+      code: "image_not_supported",
+      title: "当前模型不支持图片输入",
+      detail: "模型服务拒绝了图片输入格式，可能是模型不支持视觉能力，或 endpoint 不兼容 OpenAI 图片消息格式。",
+      recommendedAction: "请切换到明确支持图片输入的 VLM，或改用对应厂商的原生 provider。",
+      retryable: false,
+    }
+  }
+  if (/empty|空图片说明/i.test(raw)) {
+    return {
+      code: "empty_caption",
+      title: "模型返回了空图片说明",
+      detail: "VLM 请求完成了，但没有返回可用 caption。",
+      recommendedAction: "请换一个视觉模型，或降低并发后重试。",
+      retryable: true,
+    }
+  }
+  return {
+    code: "unknown",
+    title: "图片说明生成失败",
+    detail: raw || "未知错误。",
+    recommendedAction: "请查看错误详情，确认模型 endpoint、Key、模型名和图片输入能力。",
+    retryable: true,
+  }
+}
+
+export async function preflightCaptionModel(
+  llmConfig: LlmConfig,
+  signal?: AbortSignal,
+): Promise<CaptionPreflightResult> {
+  const messages: ChatMessage[] = [
+    {
+      role: "user",
+      content: "请只回复两个字：正常",
+    },
+  ]
+  const tokens: string[] = []
+  let streamError: Error | null = null
+
+  await streamChat(
+    llmConfig,
+    messages,
+    {
+      onToken: (t) => tokens.push(t),
+      onDone: () => {},
+      onError: (e) => {
+        streamError = e
+      },
+    },
+    signal,
+    {
+      temperature: 0,
+      max_tokens: 16,
+    },
+  )
+
+  if (streamError) {
+    return {
+      ok: false,
+      diagnosis: classifyCaptionFailure(streamError, llmConfig),
+    }
+  }
+  return { ok: true }
 }
 
 /**

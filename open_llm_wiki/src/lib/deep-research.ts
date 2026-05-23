@@ -4,8 +4,14 @@ import { buildLanguageDirective } from "@/lib/output-language"
 import { normalizePath } from "@/lib/path-utils"
 import { loadResearchSessions, saveResearchSession } from "@/lib/research-persist"
 import { fetchResearchDocument, runResearchSearch } from "@/lib/research-backend"
+import {
+  buildOpportunityCardsFromReport,
+  getResearchProfile,
+  type ResearchProfile,
+} from "@/lib/research-profiles"
 import type {
   EnterResearchWorkbenchInput,
+  OpportunityCard,
   ResearchFinding,
   ResearchFindingPromotionState,
   ResearchProviderStatus,
@@ -19,17 +25,21 @@ import { useResearchStore } from "@/stores/research-store"
 import { useWikiStore, type LlmConfig, type SearchApiConfig } from "@/stores/wiki-store"
 import { useReviewStore } from "@/stores/review-store"
 
-const REPORT_SECTION_SPECS = [
-  { key: "research_question", title: "研究问题" },
-  { key: "scope_and_assumptions", title: "研究范围与前提" },
-  { key: "core_findings", title: "核心结论" },
-  { key: "evidence_sources", title: "证据来源" },
-  { key: "open_questions", title: "未解决问题" },
-  { key: "revision_suggestions", title: "可带入业务修订的建议" },
-] as const
-
 function safeNowIso(): string {
   return new Date().toISOString()
+}
+
+const RESEARCH_REPORT_SYNTHESIS_TIMEOUT_MS = 90_000
+
+class ResearchReportSynthesisError extends Error {
+  constructor(
+    message: string,
+    readonly code: "stream_error" | "timeout" | "empty_report",
+    readonly cause?: unknown,
+  ) {
+    super(message)
+    this.name = "ResearchReportSynthesisError"
+  }
 }
 
 function normalizeList(items: unknown, limit = 6): string[] {
@@ -222,6 +232,151 @@ async function persistResearchSessionSnapshot(sessionId: string): Promise<void> 
   useResearchStore.getState().updateSession(sessionId, saved)
 }
 
+function makeReportSynthesisErrorMessage(error: unknown): string {
+  if (error instanceof ResearchReportSynthesisError) return error.message
+  if (error instanceof Error && error.message.trim()) {
+    return `研究报告生成失败：${error.message.trim()}`
+  }
+  return "研究报告生成失败：模型没有返回可用错误信息。"
+}
+
+function buildFallbackResearchReport(
+  session: ResearchSession,
+  options: {
+    reason: string
+    roundsCompleted: number
+    degraded: boolean
+  },
+): string {
+  const sourceLines = session.sources.length > 0
+    ? session.sources
+        .slice(0, 10)
+        .map((source, index) => [
+          `${index + 1}. ${source.title}`,
+          source.url ? `   - URL：${source.url}` : "",
+          source.learnedFacts.length > 0 ? `   - 已提炼信息：${source.learnedFacts.join("；")}` : "",
+          source.reliabilityNote ? `   - 抓取状态：${source.reliabilityNote}` : "",
+        ].filter(Boolean).join("\n"))
+        .join("\n")
+    : "- 暂无可用来源。"
+  const learningLines = session.learnings.length > 0
+    ? session.learnings.slice(0, 16).map((item) => `- ${item}`).join("\n")
+    : "- 暂无可用提炼信息。"
+  const followUpLines = session.pendingFollowUps.length > 0
+    ? session.pendingFollowUps
+        .slice(0, 8)
+        .map((item) => `- ${item.followUpQuestion}${item.reason ? `（原因：${item.reason}）` : ""}`)
+        .join("\n")
+    : "- 暂无待追问分支。"
+
+  return [
+    "# 研究报告生成兜底草案",
+    "",
+    "模型报告合成阶段没有正常完成，系统已把当前已经抓取和提炼的证据保存为兜底草案，避免本轮研究停在不可观测状态。",
+    "",
+    "## 研究问题",
+    session.topic,
+    "",
+    "## 当前状态",
+    `- 失败阶段：生成研究报告`,
+    `- 失败原因：${options.reason}`,
+    `- 已完成轮次：${options.roundsCompleted}/${session.depth}`,
+    `- 来源数量：${session.sources.length}`,
+    `- 已提炼信息数量：${session.learnings.length}`,
+    `- 是否存在降级抓取：${options.degraded ? "是" : "否"}`,
+    "",
+    "## 已提炼信息",
+    learningLines,
+    "",
+    "## 证据来源",
+    sourceLines,
+    "",
+    "## 未解决问题",
+    followUpLines,
+    "",
+    "## 可带入业务修订的建议",
+    "- 当前报告是兜底草案，建议先检查模型配置、网络状态或切换更快模型后重试报告生成。",
+    "- 已抓取来源和 learnings 已保留，可作为下一次重试的基础证据。",
+  ].join("\n")
+}
+
+async function markResearchReportSynthesisFailed(
+  sessionId: string,
+  projectPath: string,
+  error: unknown,
+  options: {
+    degraded: boolean
+    roundsCompleted: number
+    providerStatus: ResearchProviderStatus
+  },
+): Promise<void> {
+  const reason = makeReportSynthesisErrorMessage(error)
+  const current = getSession(sessionId)
+  if (!current) return
+  const fallbackReport = buildFallbackResearchReport(current, {
+    reason,
+    degraded: options.degraded,
+    roundsCompleted: options.roundsCompleted,
+  })
+  const reportSections = parseResearchReportSectionsForProfile(
+    fallbackReport,
+    getResearchProfile(current.taskType ?? "generic_research"),
+  )
+
+  appendResearchThreadEntry(sessionId, {
+    phase: "synthesize_report",
+    kind: "error",
+    title: "研究报告生成失败，已保存兜底草案",
+    detail: reason,
+    data: {
+      stage: "synthesize_report",
+      roundsCompleted: options.roundsCompleted,
+      fallbackReport: true,
+      errorCode: error instanceof ResearchReportSynthesisError ? error.code : "unknown",
+    },
+  })
+
+  const failed = updateSession(sessionId, (session) => ({
+    ...session,
+    status: "error",
+    phase: "synthesize_report",
+    reportMarkdown: fallbackReport,
+    reportSections,
+    errorMessage: reason,
+    providerStatus: {
+      provider: options.providerStatus.provider,
+      degraded: true,
+      detail: reason,
+    },
+    runtime: {
+      ...session.runtime,
+      phase: "synthesize_report",
+      status: "error",
+      title: "研究报告生成失败",
+      detail: "报告合成阶段没有正常完成，系统已保存兜底草案和失败原因，可以调整模型或稍后重试。",
+      errorMessage: reason,
+      canResume: true,
+      completedArtifacts: Array.from(new Set([
+        ...session.runtime.completedArtifacts,
+        "已保存来源证据",
+        "已保存报告兜底草案",
+        "报告合成失败原因已记录",
+      ])),
+      currentRound: options.roundsCompleted,
+      maxDepth: session.depth,
+      providerStatus: {
+        provider: options.providerStatus.provider,
+        degraded: true,
+        detail: reason,
+      },
+    },
+  }))
+  if (failed) {
+    const saved = await saveResearchSession(normalizePath(projectPath), failed)
+    useResearchStore.getState().updateSession(sessionId, saved)
+  }
+}
+
 export function enterResearchWorkbench(input?: EnterResearchWorkbenchInput): string {
   return useResearchStore.getState().enterResearchWorkbench(input)
 }
@@ -359,9 +514,58 @@ export async function createRevisionTaskFromResearchFinding(
   return getSession(sessionId)?.findings.find((item) => item.findingId === findingId) ?? finding
 }
 
+export async function createReviewTaskFromOpportunityCard(
+  sessionId: string,
+  cardId: string,
+): Promise<OpportunityCard | null> {
+  const session = getSession(sessionId)
+  const card = session?.opportunityCards?.find((item) => item.cardId === cardId) ?? null
+  if (!session || !card) return null
+  useReviewStore.getState().addItem({
+    type: "suggestion",
+    title: `商机候选：${card.title}`,
+    description: [
+      `机会假设：${card.opportunityHypothesis}`,
+      `目标客群：${card.targetSegment}`,
+      `痛点：${card.painPoint}`,
+      `研究依据：${card.evidenceSummary}`,
+      card.risks.length > 0 ? `风险与缺口：${card.risks.join("；")}` : "",
+      card.validationExperiments.length > 0 ? `建议验证：${card.validationExperiments.join("；")}` : "",
+    ].filter(Boolean).join("\n\n"),
+    options: [
+      { label: "打开深度研究", action: "goto-research-mode" },
+      { label: "进入策略工作台", action: "goto-strategy-mode" },
+    ],
+    origin: "wiki_lint",
+    linkedDocId: card.linkedDocId ?? null,
+    researchSessionId: session.sessionId,
+    researchFindingId: card.cardId,
+    researchEvidenceSummary: card.evidenceSummary,
+    researchSourceUrls: card.sourceUrls,
+    targetFieldKey: card.targetFieldKey ?? null,
+  })
+  updateSession(sessionId, (current) => ({
+    ...current,
+    opportunityCards: (current.opportunityCards ?? []).map((item) =>
+      item.cardId === cardId ? { ...item, status: "promoted_to_review" } : item,
+    ),
+  }))
+  appendResearchThreadEntry(sessionId, {
+    phase: session.phase,
+    kind: "finding_promoted",
+    title: `机会卡已生成评审任务：${card.title}`,
+    detail: card.opportunityHypothesis,
+    findingId: card.cardId,
+    data: { action: "opportunity_promoted_to_review" },
+  })
+  await persistResearchSessionSnapshot(sessionId)
+  return getSession(sessionId)?.opportunityCards?.find((item) => item.cardId === cardId) ?? card
+}
+
 export async function runDeepResearchSession(sessionId: string, projectPath: string): Promise<void> {
   const session = getSession(sessionId)
   if (!session) return
+  const profile = getResearchProfile(session.taskType ?? "generic_research")
   const llmConfig = useWikiStore.getState().llmConfig
   const searchConfig = useWikiStore.getState().searchApiConfig
   const pp = normalizePath(projectPath)
@@ -378,7 +582,7 @@ export async function runDeepResearchSession(sessionId: string, projectPath: str
     maxDepth: session.depth,
   })
 
-  const clarifications = await generateClarificationQuestions(session, context, llmConfig)
+  const clarifications = await generateClarificationQuestions(session, context, llmConfig, profile)
   const canUseSeededQueries = Array.isArray(session.plannedQueries) && session.plannedQueries.length > 0
   const shouldPauseForInput = session.userAnswers.length === 0 && clarifications.length > 0 && !canUseSeededQueries
   appendResearchThreadEntry(sessionId, {
@@ -446,7 +650,7 @@ export async function runDeepResearchSession(sessionId: string, projectPath: str
   const seededQueries = normalizeQueryList(working.plannedQueries, queryLimit)
   const generatedQueries = seededQueries.length >= Math.max(working.breadth, 2)
     ? []
-    : await generatePlannedQueries(working, context, llmConfig)
+    : await generatePlannedQueries(working, context, llmConfig, profile)
   const initialQueries = normalizeQueryList([...seededQueries, ...generatedQueries], queryLimit)
   appendResearchThreadEntry(sessionId, {
     phase: "plan_queries",
@@ -578,6 +782,7 @@ export async function runDeepResearchSession(sessionId: string, projectPath: str
           fetched.markdown,
           fetched.detail,
           llmConfig,
+          profile,
           allSources.length + roundEvidence.length,
         )
         const fingerprint = sourceFingerprint(evidence)
@@ -621,7 +826,7 @@ export async function runDeepResearchSession(sessionId: string, projectPath: str
     allLearnings = nextLearnings
     useResearchStore.getState().appendLearnings(sessionId, dedupRoundLearnings)
 
-    pendingFollowUps = await generateBranchFollowUps(working, dedupRoundLearnings, llmConfig)
+    pendingFollowUps = await generateBranchFollowUps(working, dedupRoundLearnings, llmConfig, profile)
     appendResearchThreadEntry(sessionId, {
       phase: "branch_followups",
       kind: "followup_generated",
@@ -747,12 +952,69 @@ export async function runDeepResearchSession(sessionId: string, projectPath: str
   })
   if (!working) return
 
-  const reportMarkdown = await synthesizeResearchReport(working, context, llmConfig, {
-    degraded,
-    blockedReason: null,
-    roundsCompleted: roundIndex + 1,
+  appendResearchThreadEntry(sessionId, {
+    phase: "synthesize_report",
+    kind: "report_started",
+    title: "开始生成研究报告",
+    detail: "已进入报告合成阶段，正在调用模型综合来源证据、已提炼信息和待追问问题。",
+    data: { roundsCompleted: roundIndex + 1, sourceCount: allSources.length, learningCount: allLearnings.length },
   })
-  const reportSections = parseResearchReportSections(reportMarkdown)
+  await persistResearchSessionSnapshot(sessionId)
+
+  let lastReportProgressAt = 0
+  let lastReportedChars = 0
+  let reportedFirstToken = false
+  let progressThreadWritten = false
+  let reportMarkdown = ""
+  const reportMaxDepth = working.depth
+  try {
+    reportMarkdown = await synthesizeResearchReport(working, context, llmConfig, profile, {
+      degraded,
+      blockedReason: null,
+      roundsCompleted: roundIndex + 1,
+      timeoutMs: RESEARCH_REPORT_SYNTHESIS_TIMEOUT_MS,
+      onProgress: async ({ receivedChars }) => {
+        const now = Date.now()
+        if (
+          reportedFirstToken &&
+          now - lastReportProgressAt < 3000 &&
+          receivedChars - lastReportedChars < 800
+        ) {
+          return
+        }
+        reportedFirstToken = true
+        lastReportProgressAt = now
+        lastReportedChars = receivedChars
+        syncSessionRuntime(sessionId, {
+          phase: "synthesize_report",
+          status: "running",
+          title: "生成研究报告",
+          detail: `模型已开始输出研究报告，当前已收到约 ${receivedChars.toLocaleString()} 字。`,
+          currentRound: roundIndex + 1,
+          maxDepth: reportMaxDepth,
+        })
+        if (!progressThreadWritten && receivedChars > 0) {
+          progressThreadWritten = true
+          appendResearchThreadEntry(sessionId, {
+            phase: "synthesize_report",
+            kind: "report_progress",
+            title: "报告合成已有输出",
+            detail: `模型已返回约 ${receivedChars.toLocaleString()} 字，正在继续接收完整报告。`,
+            data: { receivedChars },
+          })
+          await persistResearchSessionSnapshot(sessionId)
+        }
+      },
+    })
+  } catch (error) {
+    await markResearchReportSynthesisFailed(sessionId, pp, error, {
+      degraded,
+      roundsCompleted: roundIndex + 1,
+      providerStatus,
+    })
+    return
+  }
+  const reportSections = parseResearchReportSectionsForProfile(reportMarkdown, profile)
   appendResearchThreadEntry(sessionId, {
     phase: "synthesize_report",
     kind: "report_generated",
@@ -761,7 +1023,20 @@ export async function runDeepResearchSession(sessionId: string, projectPath: str
     data: { parsedSections: reportSections.parsed, roundsCompleted: roundIndex + 1 },
   })
 
-  const findings = await extractResearchFindings(working, reportMarkdown, llmConfig)
+  const findings = await extractResearchFindings(working, reportMarkdown, llmConfig, profile)
+  const opportunityCards = profile.taskType === "market_opportunity_analysis"
+    ? buildOpportunityCardsFromReport(working, reportMarkdown)
+    : []
+  opportunityCards.forEach((card) => {
+    appendResearchThreadEntry(sessionId, {
+      phase: "save_research_asset",
+      kind: "finding_extracted",
+      title: `已生成机会卡：${card.title}`,
+      detail: card.opportunityHypothesis,
+      findingId: card.cardId,
+      data: { kind: "opportunity_card", confidence: card.confidence },
+    })
+  })
   findings.forEach((finding) => {
     appendResearchThreadEntry(sessionId, {
       phase: "save_research_asset",
@@ -778,6 +1053,7 @@ export async function runDeepResearchSession(sessionId: string, projectPath: str
     reportMarkdown,
     reportSections,
     findings,
+    opportunityCards,
     sources: allSources,
     learnings: allLearnings,
     pendingFollowUps,
@@ -797,8 +1073,8 @@ export async function runDeepResearchSession(sessionId: string, projectPath: str
       title: "保存研究档案",
       detail: "正在把研究报告、来源证据和会话快照写入研究档案层。",
       completedArtifacts: degraded
-        ? ["已保存研究线程", "已保存来源证据", "已生成候选结论", "证据抓取已降级"]
-        : ["已保存研究线程", "已保存来源证据", "已生成候选结论"],
+        ? ["已保存研究线程", "已保存来源证据", "已生成候选结论", ...(opportunityCards.length > 0 ? ["已生成机会卡"] : []), "证据抓取已降级"]
+        : ["已保存研究线程", "已保存来源证据", "已生成候选结论", ...(opportunityCards.length > 0 ? ["已生成机会卡"] : [])],
       currentRound: roundIndex + 1,
       maxDepth: current.depth,
       providerStatus: {
@@ -837,6 +1113,13 @@ export async function runDeepResearchSession(sessionId: string, projectPath: str
 }
 
 export function parseResearchReportSections(reportMarkdown: string): ResearchReportSections {
+  return parseResearchReportSectionsForProfile(reportMarkdown, getResearchProfile("generic_research"))
+}
+
+function parseResearchReportSectionsForProfile(
+  reportMarkdown: string,
+  profile: ResearchProfile,
+): ResearchReportSections {
   const normalized = reportMarkdown.trim()
   if (!normalized) {
     return { parsed: false, sections: [] }
@@ -847,7 +1130,7 @@ export function parseResearchReportSections(reportMarkdown: string): ResearchRep
     return { parsed: false, sections: [] }
   }
 
-  const sections = REPORT_SECTION_SPECS.map((spec) => {
+  const sections = profile.reportSections.map((spec) => {
     const idx = matches.findIndex((match) => match[1].trim() === spec.title)
     if (idx === -1) {
       return { key: spec.key, title: spec.title, content: "" }
@@ -868,6 +1151,7 @@ async function generateClarificationQuestions(
   session: ResearchSession,
   context: { purpose: string; overview: string; index: string },
   llmConfig: LlmConfig,
+  profile: ResearchProfile,
 ): Promise<string[]> {
   let result = ""
   await streamChat(
@@ -876,16 +1160,18 @@ async function generateClarificationQuestions(
       {
         role: "system",
         content: [
-          "你是业务深度研究编排助手。",
+          ...profile.buildClarificationSystemPrompt(session),
           buildLanguageDirective(session.topic),
-          "请基于当前研究主题，提出 2 个最关键的澄清问题，帮助研究更贴近业务。",
-          "严格输出 JSON 数组，每项是一个字符串。",
         ].join("\n"),
       },
       {
         role: "user",
         content: [
           `研究主题：${session.topic}`,
+          session.businessContext ? `业务背景：${session.businessContext}` : "",
+          session.targetMarket ? `目标市场：${session.targetMarket}` : "",
+          session.targetAudience ? `目标客群：${session.targetAudience}` : "",
+          session.constraints ? `已知约束：${session.constraints}` : "",
           session.triggerSource ? `触发来源：${session.triggerSource}` : "",
           context.purpose ? `项目目标：\n${context.purpose}` : "",
           context.overview ? `知识总览：\n${context.overview}` : "",
@@ -917,6 +1203,7 @@ async function generatePlannedQueries(
   session: ResearchSession,
   context: { purpose: string; overview: string; index: string },
   llmConfig: LlmConfig,
+  profile: ResearchProfile,
 ): Promise<string[]> {
   let result = ""
   await streamChat(
@@ -925,17 +1212,18 @@ async function generatePlannedQueries(
       {
         role: "system",
         content: [
-          "你是业务深度研究规划助手。",
+          ...profile.buildQuerySystemPrompt(session),
           buildLanguageDirective(session.topic),
-          "请基于研究主题、项目目标、现有知识概览和专家澄清回答，生成一组适合网页搜索与整页抓取的查询。",
-          "查询要覆盖 breadth / depth，不要泛泛而谈。",
-          "严格输出 JSON 数组，每项是一个查询字符串。",
         ].join("\n"),
       },
       {
         role: "user",
         content: [
           `研究主题：${session.topic}`,
+          session.businessContext ? `业务背景：${session.businessContext}` : "",
+          session.targetMarket ? `目标市场：${session.targetMarket}` : "",
+          session.targetAudience ? `目标客群：${session.targetAudience}` : "",
+          session.constraints ? `已知约束：${session.constraints}` : "",
           `breadth：${session.breadth}`,
           `depth：${session.depth}`,
           session.focus ? `焦点：${session.focus}` : "",
@@ -960,12 +1248,7 @@ async function generatePlannedQueries(
   } catch {
     // fall through
   }
-  return [
-    session.topic,
-    `${session.topic} best practices`,
-    `${session.topic} case study`,
-    `${session.topic} metrics action framework`,
-  ]
+  return profile.buildFallbackQueries(session)
 }
 
 async function summarizeSourceEvidence(
@@ -975,6 +1258,7 @@ async function summarizeSourceEvidence(
   markdown: string,
   detail: string,
   llmConfig: LlmConfig,
+  profile: ResearchProfile,
   index: number,
 ): Promise<ResearchSourceEvidence> {
   let response = ""
@@ -984,16 +1268,17 @@ async function summarizeSourceEvidence(
       {
         role: "system",
         content: [
-          "你是业务研究证据提炼助手。",
+          ...profile.buildSourceSummarySystemPrompt(session),
           buildLanguageDirective(session.topic),
-          "请从单个来源中提炼：learnedFacts、openFollowUps、sourceReliabilityNote。",
-          "严格输出 JSON 对象：{ learnedFacts: string[], openFollowUps: string[], sourceReliabilityNote: string }",
         ].join("\n"),
       },
       {
         role: "user",
         content: [
           `研究主题：${session.topic}`,
+          session.businessContext ? `业务背景：${session.businessContext}` : "",
+          session.targetMarket ? `目标市场：${session.targetMarket}` : "",
+          session.targetAudience ? `目标客群：${session.targetAudience}` : "",
           `当前查询：${query}`,
           `来源标题：${result.title}`,
           `来源 URL：${result.url}`,
@@ -1049,6 +1334,7 @@ async function generateBranchFollowUps(
   session: ResearchSession,
   learnings: string[],
   llmConfig: LlmConfig,
+  profile: ResearchProfile,
 ): Promise<StructuredFollowUp[]> {
   let result = ""
   await streamChat(
@@ -1057,11 +1343,8 @@ async function generateBranchFollowUps(
       {
         role: "system",
         content: [
-          "你是业务深度研究追问助手。",
+          ...profile.buildFollowUpSystemPrompt(session),
           buildLanguageDirective(session.topic),
-          "基于当前 learnings，提出最多 3 个下一步需要继续追问的方向。",
-          "严格输出 JSON 数组，每项包含：followUpQuestion, reason, derivedFromLearning, priority。",
-          "priority 只能是 high、medium、low。",
         ].join("\n"),
       },
       {
@@ -1110,62 +1393,112 @@ async function synthesizeResearchReport(
   session: ResearchSession,
   context: { purpose: string; overview: string; index: string },
   llmConfig: LlmConfig,
+  profile: ResearchProfile,
   options: {
     degraded: boolean
     blockedReason: string | null
     roundsCompleted: number
+    timeoutMs?: number
+    onProgress?: (progress: { receivedChars: number }) => void | Promise<void>
   },
 ): Promise<string> {
   let report = ""
-  await streamChat(
-    llmConfig,
-    [
-      {
-        role: "system",
-        content: [
-          "你是业务深度研究总结助手。",
-          buildLanguageDirective(session.topic),
-          "请严格按以下结构输出研究报告：",
-          "## 研究问题",
-          "## 研究范围与前提",
-          "## 核心结论",
-          "## 证据来源",
-          "## 未解决问题",
-          "## 可带入业务修订的建议",
-          "要求：标清哪些内容是已确认依据，哪些只是启发性延展。",
-          "如果结果不足，请明确说明是证据不足、抓取降级还是外部来源冲突未解。",
-        ].join("\n"),
-      },
-      {
-        role: "user",
-        content: [
-          `研究主题：${session.topic}`,
-          `研究轮次：${options.roundsCompleted}/${session.depth}`,
-          session.userAnswers.length > 0 ? `专家澄清回答：\n${session.userAnswers.join("\n")}` : "",
-          context.purpose ? `项目目标：\n${context.purpose}` : "",
-          context.overview ? `知识总览：\n${context.overview}` : "",
-          options.degraded ? "当前研究状态：部分来源抓取降级，部分结论可能只基于搜索摘要。" : "当前研究状态：来源抓取正常。",
-          options.blockedReason ? `阻塞或缺口：${options.blockedReason}` : "",
-          `来源 learnings：\n${session.sources.map((item) => `- ${item.title}: ${item.learnedFacts.join("；")}`).join("\n")}`,
-          session.pendingFollowUps.length > 0
-            ? `仍待追问：\n${session.pendingFollowUps.map((item) => `- ${item.followUpQuestion}（原因：${item.reason}）`).join("\n")}`
-            : "",
-        ].filter(Boolean).join("\n\n"),
-      },
-    ],
-    {
-      onToken: (token) => { report += token },
-      onDone: () => {},
-      onError: () => {},
-    },
-  )
-  return report.trim()
+  const timeoutMs = Math.max(5_000, options.timeoutMs ?? RESEARCH_REPORT_SYNTHESIS_TIMEOUT_MS)
+  const abortController = new AbortController()
+  let timeoutId: ReturnType<typeof setTimeout> | null = null
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      let settled = false
+      const settleResolve = () => {
+        if (settled) return
+        settled = true
+        resolve()
+      }
+      const settleReject = (error: unknown) => {
+        if (settled) return
+        settled = true
+        reject(error)
+      }
+
+      timeoutId = setTimeout(() => {
+        abortController.abort()
+        settleReject(new ResearchReportSynthesisError(
+          `研究报告生成超过 ${Math.round(timeoutMs / 1000)} 秒仍未完成，已停止等待。可以稍后重试，或切换更快模型后重新生成报告。`,
+          "timeout",
+        ))
+      }, timeoutMs)
+
+      void streamChat(
+        llmConfig,
+        [
+          {
+            role: "system",
+            content: [
+              ...profile.buildReportSystemPrompt(session),
+              buildLanguageDirective(session.topic),
+            ].join("\n"),
+          },
+          {
+            role: "user",
+            content: [
+              `研究主题：${session.topic}`,
+              ...profile.buildReportUserContext(session),
+              `研究轮次：${options.roundsCompleted}/${session.depth}`,
+              session.userAnswers.length > 0 ? `专家澄清回答：\n${session.userAnswers.join("\n")}` : "",
+              context.purpose ? `项目目标：\n${context.purpose}` : "",
+              context.overview ? `知识总览：\n${context.overview}` : "",
+              options.degraded ? "当前研究状态：部分来源抓取降级，部分结论可能只基于搜索摘要。" : "当前研究状态：来源抓取正常。",
+              options.blockedReason ? `阻塞或缺口：${options.blockedReason}` : "",
+              `来源 learnings：\n${session.sources.map((item) => `- ${item.title}: ${item.learnedFacts.join("；")}`).join("\n")}`,
+              session.pendingFollowUps.length > 0
+                ? `仍待追问：\n${session.pendingFollowUps.map((item) => `- ${item.followUpQuestion}（原因：${item.reason}）`).join("\n")}`
+                : "",
+            ].filter(Boolean).join("\n\n"),
+          },
+        ],
+        {
+          onToken: (token) => {
+            report += token
+            void options.onProgress?.({ receivedChars: report.length })
+          },
+          onDone: settleResolve,
+          onError: (error) => {
+            settleReject(new ResearchReportSynthesisError(
+              `研究报告生成失败：${error.message}`,
+              "stream_error",
+              error,
+            ))
+          },
+        },
+        abortController.signal,
+      ).then(settleResolve).catch((error) => {
+        settleReject(new ResearchReportSynthesisError(
+          `研究报告生成失败：${error instanceof Error ? error.message : String(error)}`,
+          "stream_error",
+          error,
+        ))
+      })
+    })
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId)
+  }
+
+  const trimmed = report.trim()
+  if (!trimmed) {
+    throw new ResearchReportSynthesisError(
+      "研究报告生成失败：模型没有返回报告正文。",
+      "empty_report",
+    )
+  }
+  return trimmed
 }
 
 async function extractResearchFindings(
   session: ResearchSession,
   reportMarkdown: string,
   llmConfig: LlmConfig,
+  profile: ResearchProfile,
 ): Promise<ResearchFinding[]> {
   let result = ""
   await streamChat(
@@ -1174,11 +1507,8 @@ async function extractResearchFindings(
       {
         role: "system",
         content: [
-          "你是业务研究结果结构化助手。",
+          ...profile.buildFindingSystemPrompt(session),
           buildLanguageDirective(session.topic),
-          "请从研究报告中提炼候选结论。",
-          "严格输出 JSON 数组，每项包含：kind, title, summary, evidenceSummary。",
-          "kind 只能是 business_conclusion 或 revision_suggestion。",
         ].join("\n"),
       },
       {

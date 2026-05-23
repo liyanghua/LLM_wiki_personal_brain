@@ -176,7 +176,7 @@ export interface WikiState {
   chatExpanded: boolean
   agentWorkbenchBottomHeight: number
   agentWorkbenchQaExpanded: boolean
-  activeView: "wiki" | "sources" | "search" | "graph" | "lint" | "review" | "settings" | "agent-mode" | "research" | "strategy"
+  activeView: "chat" | "wiki" | "sources" | "search" | "graph" | "lint" | "review" | "settings" | "agent-mode" | "research" | "strategy"
   llmConfig: LlmConfig
   /** Per-provider-preset stored overrides (API key, model, endpoint, …). */
   providerConfigs: ProviderConfigs

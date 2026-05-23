@@ -362,6 +362,7 @@ function App() {
     }
     try {
       await ensureScenePack(proj.path, {
+        persistDefaults: false,
         defaultLanguage: useWikiStore.getState().outputLanguage,
       })
       const [reports, loops, sessions, drafts, versions] = await Promise.all([

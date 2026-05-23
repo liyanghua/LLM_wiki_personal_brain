@@ -23,7 +23,7 @@ import { resolveMarkdownImageSrc } from "@/lib/markdown-image-resolver"
 import { parseFrontmatter } from "@/lib/frontmatter"
 import { FrontmatterPanel } from "@/components/editor/frontmatter-panel"
 import { useWikiStore } from "@/stores/wiki-store"
-import { readFile, fileExists } from "@/commands/fs"
+import { readFile, fileExists, preprocessFile } from "@/commands/fs"
 import { useAgentModeStore } from "@/stores/agent-mode-store"
 import type {
   AgentModeReport,
@@ -67,7 +67,7 @@ export function FilePreview({ filePath, textContent }: FilePreviewProps) {
     case "text":
       return <TextPreview filePath={filePath} content={textContent} label="Text" />
     case "document":
-      if (/\.(docx|doc|xmind)$/i.test(filePath)) {
+      if (/\.(docx|doc|xmind|xlsx|xls|ods)$/i.test(filePath)) {
         return <StructuredDocumentPreview filePath={filePath} fileName={fileName} fallbackContent={textContent} />
       }
       return <BinaryPlaceholder filePath={filePath} fileName={fileName} category={category} />
@@ -209,6 +209,7 @@ function StructuredDocumentPreview({
   })
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<PreviewTab>("source")
+  const isSpreadsheet = /\.(xlsx|xls|ods)$/i.test(filePath)
 
   useEffect(() => {
     let cancelled = false
@@ -226,6 +227,9 @@ function StructuredDocumentPreview({
 
       if (artifact?.analysisPath) {
         analysisMarkdown = await readFile(artifact.analysisPath).catch(() => null)
+      }
+      if (!analysisMarkdown && isSpreadsheet) {
+        analysisMarkdown = await preprocessFile(filePath).catch(() => fallbackContent || null)
       }
       if (artifact?.normalizedPath) {
         const normalizedRaw = await readFile(artifact.normalizedPath).catch(() => null)
@@ -258,7 +262,7 @@ function StructuredDocumentPreview({
     return () => {
       cancelled = true
     }
-  }, [filePath, reports])
+  }, [filePath, fallbackContent, reports, isSpreadsheet])
 
   const sourceKindLabel = labelForStructuredKind(filePath)
   const backendBadge = preview.report?.documentBackendStatus ?? null
@@ -329,6 +333,12 @@ function StructuredDocumentPreview({
                   <p key={item}>{item}</p>
                 ))}
             </div>
+          </div>
+        ) : null}
+
+        {isSpreadsheet && !hasSourceView ? (
+          <div className="mt-3 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900">
+            Excel 原件不可直接在预览区渲染，当前展示的是系统转换后的结构化表格文本。
           </div>
         ) : null}
 

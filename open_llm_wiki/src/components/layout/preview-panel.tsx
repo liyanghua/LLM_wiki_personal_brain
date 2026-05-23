@@ -95,7 +95,7 @@ export function PreviewPanel() {
 
   const category = getFileCategory(selectedFile)
   const fileName = getFileName(selectedFile)
-  const isStructuredDocument = /\.(pdf|docx|doc|xmind)$/i.test(selectedFile)
+  const isStructuredDocument = /\.(pdf|docx|doc|xmind|xlsx|xls|ods)$/i.test(selectedFile)
   const structuredLabel = selectedFile.split(".").pop()?.toUpperCase() ?? "文档"
   const sourceNode = useMemo(() => {
     if (!project || !selectedFile) return null

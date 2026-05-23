@@ -20,6 +20,28 @@ vi.mock("./sweep-reviews", () => ({
   sweepResolvedReviews: vi.fn().mockResolvedValue(0),
 }))
 
+vi.mock("./ingest-post-processing", () => ({
+  runDeferredIngestPostProcessing: vi.fn().mockResolvedValue({
+    semanticUnitCount: 0,
+    taskCount: 0,
+    filesWritten: [],
+    warnings: [],
+  }),
+}))
+
+vi.mock("@/lib/ingest-cache", () => ({
+  checkIngestCacheDetailed: vi.fn(),
+}))
+
+vi.mock("@/lib/source-fingerprint", () => ({
+  getSourceFingerprint: vi.fn(),
+  sourceKeyForPath: vi.fn((_projectPath: string, sourcePath: string) => sourcePath),
+}))
+
+vi.mock("@/lib/project-quality-report", () => ({
+  writeProjectQualityReport: vi.fn().mockResolvedValue(undefined),
+}))
+
 // Mock embedding so cleanupWrittenFiles' cascade-delete to LanceDB is
 // observable. The real module is over in `./embedding` but
 // cleanupWrittenFiles dynamically imports it via `@/lib/embedding`,
@@ -66,12 +88,20 @@ import {
 import { autoIngest } from "./ingest"
 import { readFile, writeFile } from "@/commands/fs"
 import { sweepResolvedReviews } from "./sweep-reviews"
+import { runDeferredIngestPostProcessing } from "./ingest-post-processing"
+import { checkIngestCacheDetailed } from "@/lib/ingest-cache"
+import { getSourceFingerprint } from "@/lib/source-fingerprint"
+import { writeProjectQualityReport } from "@/lib/project-quality-report"
 import { useWikiStore } from "@/stores/wiki-store"
 
 const mockAutoIngest = vi.mocked(autoIngest)
 const mockReadFile = vi.mocked(readFile)
 const mockWriteFile = vi.mocked(writeFile)
 const mockSweep = vi.mocked(sweepResolvedReviews)
+const mockDeferredPostProcessing = vi.mocked(runDeferredIngestPostProcessing)
+const mockCheckIngestCacheDetailed = vi.mocked(checkIngestCacheDetailed)
+const mockGetSourceFingerprint = vi.mocked(getSourceFingerprint)
+const mockWriteProjectQualityReport = vi.mocked(writeProjectQualityReport)
 
 /** Simulate the app having opened `TEST_ID` at `TEST_PATH` so the queue
  *  module's `currentProjectId` / `currentProjectPath` are set. Most
@@ -88,6 +118,27 @@ beforeEach(async () => {
   mockWriteFile.mockReset()
   mockSweep.mockReset()
   mockSweep.mockResolvedValue(0)
+  mockDeferredPostProcessing.mockReset()
+  mockDeferredPostProcessing.mockResolvedValue({
+    semanticUnitCount: 0,
+    taskCount: 0,
+    filesWritten: [],
+    warnings: [],
+  })
+  mockCheckIngestCacheDetailed.mockReset()
+  mockCheckIngestCacheDetailed.mockResolvedValue(null)
+  mockGetSourceFingerprint.mockReset()
+  mockGetSourceFingerprint.mockImplementation(async (_projectPath: string, sourcePath: string) => ({
+    sourcePath,
+    sourceKey: sourcePath.replace(/^\/project\/?/, ""),
+    sizeBytes: 100,
+    modifiedMs: 1000,
+    generatedAt: "2026-05-21T00:00:00.000Z",
+  }))
+  mockWriteProjectQualityReport.mockReset()
+  mockWriteProjectQualityReport.mockResolvedValue(
+    undefined as unknown as Awaited<ReturnType<typeof writeProjectQualityReport>>,
+  )
   removePageEmbeddingMock.mockReset()
 
   // Default: persisted queue file doesn't exist
@@ -147,6 +198,140 @@ describe("ingest-queue — enqueue & basic processing", () => {
 
     expect(mockAutoIngest).toHaveBeenCalledTimes(3)
     expect(getQueue()).toHaveLength(0)
+  })
+
+  it("batch mode defers expensive post-processing until the queue drains", async () => {
+    mockAutoIngest.mockResolvedValue(["wiki/sources/foo.md"])
+
+    await enqueueBatch(
+      TEST_ID,
+      [
+        { sourcePath: "a.md", folderContext: "" },
+        { sourcePath: "b.md", folderContext: "" },
+      ],
+      { deferPostProcessing: true, qualityMode: "balanced" },
+    )
+
+    await flushMicrotasks(50)
+
+    expect(mockAutoIngest).toHaveBeenCalledTimes(2)
+    for (const call of mockAutoIngest.mock.calls) {
+      expect(call[5]).toMatchObject({
+        batchId: expect.stringMatching(/^batch-/),
+        deferPostProcessing: true,
+        qualityMode: "balanced",
+      })
+    }
+    const batchId = mockAutoIngest.mock.calls[0][5]?.batchId
+    expect(mockDeferredPostProcessing).toHaveBeenCalledOnce()
+    expect(mockDeferredPostProcessing).toHaveBeenCalledWith(
+      TEST_PATH,
+      batchId,
+      expect.objectContaining({ runReviewSweep: true }),
+    )
+    expect(mockSweep).not.toHaveBeenCalled()
+  })
+
+  it("passes the batch strategy enhancement choice into deferred post-processing", async () => {
+    mockAutoIngest.mockResolvedValue(["wiki/sources/foo.md"])
+
+    await enqueueBatch(
+      TEST_ID,
+      [
+        { sourcePath: "a.md", folderContext: "" },
+        { sourcePath: "b.md", folderContext: "" },
+      ],
+      { deferPostProcessing: true, qualityMode: "balanced", runStrategyEnhancement: false },
+    )
+
+    await flushMicrotasks(50)
+
+    for (const call of mockAutoIngest.mock.calls) {
+      expect(call[5]).toMatchObject({
+        batchId: expect.stringMatching(/^batch-/),
+        deferPostProcessing: true,
+        qualityMode: "balanced",
+        runStrategyEnhancement: false,
+      })
+    }
+    expect(mockDeferredPostProcessing).toHaveBeenCalledOnce()
+    expect(mockDeferredPostProcessing).toHaveBeenCalledWith(
+      TEST_PATH,
+      expect.stringMatching(/^batch-/),
+      expect.objectContaining({
+        runReviewSweep: true,
+        runStrategyEnhancement: false,
+        runEmbeddings: false,
+      }),
+    )
+  })
+
+  it("core extraction mode skips deferred strategy compilation and embeddings", async () => {
+    mockAutoIngest.mockResolvedValue(["wiki/sources/foo.md"])
+
+    await enqueueBatch(
+      TEST_ID,
+      [
+        { sourcePath: "a.md", folderContext: "" },
+        { sourcePath: "b.md", folderContext: "" },
+      ],
+      { deferPostProcessing: true, qualityMode: "balanced", strategyCompileMode: "skip" },
+    )
+
+    await flushMicrotasks(50)
+
+    for (const call of mockAutoIngest.mock.calls) {
+      expect(call[5]).toMatchObject({
+        batchId: expect.stringMatching(/^batch-/),
+        deferPostProcessing: true,
+        qualityMode: "balanced",
+        strategyCompileMode: "skip",
+      })
+    }
+    expect(mockDeferredPostProcessing).toHaveBeenCalledOnce()
+    expect(mockDeferredPostProcessing).toHaveBeenCalledWith(
+      TEST_PATH,
+      expect.stringMatching(/^batch-/),
+      expect.objectContaining({
+        runReviewSweep: true,
+        runStrategyEnhancement: false,
+        runEmbeddings: false,
+      }),
+    )
+  })
+
+  it("full enhancement mode defers strategy compilation until the batch drains", async () => {
+    mockAutoIngest.mockResolvedValue(["wiki/sources/foo.md"])
+
+    await enqueueBatch(
+      TEST_ID,
+      [
+        { sourcePath: "a.md", folderContext: "" },
+        { sourcePath: "b.md", folderContext: "" },
+      ],
+      { deferPostProcessing: true, qualityMode: "balanced", strategyCompileMode: "deferred" },
+    )
+
+    await flushMicrotasks(50)
+
+    for (const call of mockAutoIngest.mock.calls) {
+      expect(call[5]).toMatchObject({
+        batchId: expect.stringMatching(/^batch-/),
+        deferPostProcessing: true,
+        qualityMode: "balanced",
+        strategyCompileMode: "deferred",
+      })
+    }
+    expect(mockDeferredPostProcessing).toHaveBeenCalledOnce()
+    expect(mockDeferredPostProcessing).toHaveBeenCalledWith(
+      TEST_PATH,
+      expect.stringMatching(/^batch-/),
+      expect.objectContaining({
+        runReviewSweep: true,
+        runStrategyEnhancement: true,
+        runEmbeddings: true,
+      }),
+    )
   })
 })
 
@@ -445,6 +630,185 @@ describe("ingest-queue — restoreQueue", () => {
     const queue = getQueue()
     expect(queue).toHaveLength(1)
     expect(queue[0].projectId).toBe(TEST_ID)
+  })
+
+  it("removes restored processing tasks when fingerprint cache proves core ingest already finished", async () => {
+    const saved = [
+      {
+        id: "ingest-done",
+        sourcePath: "raw/sources/a.xlsx",
+        folderContext: "",
+        status: "processing",
+        addedAt: 0,
+        error: null,
+        retryCount: 0,
+        deferPostProcessing: true,
+        batchId: "batch-restored",
+      },
+      {
+        id: "ingest-next",
+        sourcePath: "raw/sources/b.xlsx",
+        folderContext: "",
+        status: "pending",
+        addedAt: 1,
+        error: null,
+        retryCount: 0,
+      },
+    ]
+    mockReadFile.mockResolvedValue(JSON.stringify(saved))
+    mockCheckIngestCacheDetailed.mockResolvedValueOnce({
+      filesWritten: ["wiki/tasks/a.md"],
+      entry: {
+        hash: "h",
+        timestamp: Date.now(),
+        filesWritten: ["wiki/tasks/a.md"],
+        sourceKey: "raw/sources/a.xlsx",
+        sourceFileName: "a.xlsx",
+        sourceFingerprint: {
+          sourcePath: "/project/raw/sources/a.xlsx",
+          sourceKey: "raw/sources/a.xlsx",
+          sizeBytes: 100,
+          modifiedMs: 1000,
+          generatedAt: "2026-05-21T00:00:00.000Z",
+        },
+        completedStages: ["core", "postProcessing"],
+      },
+    })
+    mockAutoIngest.mockImplementation(() => new Promise(() => {}))
+
+    await restoreQueue(TEST_ID, TEST_PATH)
+    await flushMicrotasks(5)
+
+    expect(mockCheckIngestCacheDetailed).toHaveBeenCalledWith(
+      TEST_PATH,
+      "a.xlsx",
+      "",
+      expect.objectContaining({ sourceKey: "raw/sources/a.xlsx" }),
+    )
+    expect(getQueue().some((task) => task.id === "ingest-done")).toBe(false)
+    expect(getQueue().some((task) => task.id === "ingest-next")).toBe(true)
+    expect(mockAutoIngest).toHaveBeenCalledWith(
+      TEST_PATH,
+      "/project/raw/sources/b.xlsx",
+      expect.anything(),
+      expect.any(AbortSignal),
+      "",
+      expect.objectContaining({ qualityMode: "balanced" }),
+    )
+    expect(mockWriteProjectQualityReport).toHaveBeenCalledWith(TEST_PATH)
+  })
+
+  it("keeps restored processing tasks pending when cache reconciliation misses", async () => {
+    const saved = [
+      {
+        id: "ingest-retry",
+        sourcePath: "raw/sources/miss.xlsx",
+        folderContext: "",
+        status: "processing",
+        addedAt: 0,
+        error: null,
+        retryCount: 0,
+      },
+    ]
+    mockReadFile.mockResolvedValue(JSON.stringify(saved))
+    mockCheckIngestCacheDetailed.mockResolvedValueOnce(null)
+    mockAutoIngest.mockImplementation(() => new Promise(() => {}))
+
+    await restoreQueue(TEST_ID, TEST_PATH)
+    await flushMicrotasks(5)
+
+    const queue = getQueue()
+    expect(queue).toHaveLength(1)
+    expect(queue[0].id).toBe("ingest-retry")
+    expect(["pending", "processing"]).toContain(queue[0].status)
+    expect(mockAutoIngest).toHaveBeenCalledWith(
+      TEST_PATH,
+      "/project/raw/sources/miss.xlsx",
+      expect.anything(),
+      expect.any(AbortSignal),
+      "",
+      expect.any(Object),
+    )
+  })
+
+  it("runs deferred post-processing for restored processing tasks that finished core only", async () => {
+    const saved = [
+      {
+        id: "ingest-core-only",
+        sourcePath: "raw/sources/core.xlsx",
+        folderContext: "",
+        status: "processing",
+        addedAt: 0,
+        error: null,
+        retryCount: 0,
+        deferPostProcessing: true,
+        batchId: "batch-core-only",
+      },
+    ]
+    mockReadFile.mockResolvedValue(JSON.stringify(saved))
+    mockCheckIngestCacheDetailed.mockResolvedValueOnce({
+      filesWritten: ["wiki/tasks/core.md"],
+      entry: {
+        hash: "h",
+        timestamp: Date.now(),
+        filesWritten: ["wiki/tasks/core.md"],
+        sourceKey: "raw/sources/core.xlsx",
+        sourceFileName: "core.xlsx",
+        completedStages: ["core"],
+      },
+    })
+
+    await restoreQueue(TEST_ID, TEST_PATH)
+    await flushMicrotasks(20)
+
+    expect(getQueue()).toHaveLength(0)
+    expect(mockDeferredPostProcessing).toHaveBeenCalledWith(
+      TEST_PATH,
+      "batch-core-only",
+      expect.objectContaining({ runReviewSweep: true }),
+    )
+  })
+
+  it("preserves restored core-only batch choice to skip strategy enhancement", async () => {
+    const saved = [
+      {
+        id: "ingest-core-only",
+        sourcePath: "raw/sources/core.xlsx",
+        folderContext: "",
+        status: "processing",
+        addedAt: 0,
+        error: null,
+        retryCount: 0,
+        deferPostProcessing: true,
+        batchId: "batch-core-only",
+        runStrategyEnhancement: false,
+      },
+    ]
+    mockReadFile.mockResolvedValue(JSON.stringify(saved))
+    mockCheckIngestCacheDetailed.mockResolvedValueOnce({
+      filesWritten: ["wiki/tasks/core.md"],
+      entry: {
+        hash: "h",
+        timestamp: Date.now(),
+        filesWritten: ["wiki/tasks/core.md"],
+        sourceKey: "raw/sources/core.xlsx",
+        sourceFileName: "core.xlsx",
+        completedStages: ["core"],
+      },
+    })
+
+    await restoreQueue(TEST_ID, TEST_PATH)
+    await flushMicrotasks(20)
+
+    expect(getQueue()).toHaveLength(0)
+    expect(mockDeferredPostProcessing).toHaveBeenCalledWith(
+      TEST_PATH,
+      "batch-core-only",
+      expect.objectContaining({
+        runReviewSweep: true,
+        runStrategyEnhancement: false,
+      }),
+    )
   })
 })
 

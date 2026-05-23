@@ -16,6 +16,21 @@ const PROVIDER_OPTIONS: Array<{ value: SettingsDraft["multimodalProvider"]; labe
   { value: "ollama", label: "Ollama" },
 ]
 
+const DASHSCOPE_REGION_PRESETS = [
+  {
+    label: "DashScope 国际站 Singapore",
+    endpoint: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+  },
+  {
+    label: "DashScope 中国站 / 百炼",
+    endpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+  },
+  {
+    label: "DashScope 美国 Virginia",
+    endpoint: "https://dashscope.us-east-1.aliyuncs.com/compatible-mode/v1",
+  },
+]
+
 export function MultimodalSection({ draft, setDraft }: Props) {
   const { t } = useTranslation()
 
@@ -177,6 +192,26 @@ export function MultimodalSection({ draft, setDraft }: Props) {
               {draft.multimodalProvider === "custom" && (
                 <div className="space-y-2">
                   <Label>{t("settings.sections.multimodal.customEndpoint", "Endpoint URL")}</Label>
+                  <div className="flex flex-wrap gap-2">
+                    {DASHSCOPE_REGION_PRESETS.map((preset) => (
+                      <button
+                        key={preset.endpoint}
+                        type="button"
+                        onClick={() => {
+                          setDraft("multimodalProvider", "custom")
+                          setDraft("multimodalApiMode", "chat_completions")
+                          setDraft("multimodalCustomEndpoint", preset.endpoint)
+                        }}
+                        className={`rounded-full border px-2.5 py-1 text-[11px] transition ${
+                          draft.multimodalCustomEndpoint === preset.endpoint
+                            ? "border-primary bg-primary/10 text-primary"
+                            : "border-border bg-background text-muted-foreground hover:border-primary/40 hover:text-foreground"
+                        }`}
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
                   <Input
                     value={draft.multimodalCustomEndpoint}
                     onChange={(e) => setDraft("multimodalCustomEndpoint", e.target.value)}
@@ -185,7 +220,7 @@ export function MultimodalSection({ draft, setDraft }: Props) {
                   <p className="text-xs text-muted-foreground">
                     {t(
                       "settings.sections.multimodal.customEndpointHint",
-                      "OpenAI-compatible /v1 base. LM Studio, llama.cpp server, vLLM, LocalAI all work.",
+                      "OpenAI-compatible /v1 base. DashScope 的 API Key 和 endpoint 按区域绑定；国际站、中国站/百炼、美国区不能混用。",
                     )}
                   </p>
                 </div>

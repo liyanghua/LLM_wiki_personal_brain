@@ -1,9 +1,19 @@
 import { readFile, writeFile } from "@/commands/fs"
 import { autoIngest } from "./ingest"
 import { useWikiStore } from "@/stores/wiki-store"
-import { normalizePath, isAbsolutePath } from "@/lib/path-utils"
+import { getFileName, normalizePath, isAbsolutePath } from "@/lib/path-utils"
 import { getProjectPathById } from "@/lib/project-identity"
 import { hasUsableLlm } from "@/lib/has-usable-llm"
+import {
+  resolveStrategyCompileMode,
+  shouldRunDeferredStrategyCompile,
+  type AutoIngestOptions,
+  type IngestQualityMode,
+  type StrategyCompileMode,
+} from "@/lib/ingest-options"
+import { checkIngestCacheDetailed } from "@/lib/ingest-cache"
+import { getSourceFingerprint } from "@/lib/source-fingerprint"
+import { writeProjectQualityReport } from "@/lib/project-quality-report"
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -19,6 +29,11 @@ export interface IngestTask {
   addedAt: number
   error: string | null
   retryCount: number
+  batchId?: string
+  deferPostProcessing?: boolean
+  qualityMode?: IngestQualityMode
+  strategyCompileMode?: StrategyCompileMode
+  runStrategyEnhancement?: boolean
 }
 
 // ── State ─────────────────────────────────────────────────────────────────
@@ -38,6 +53,8 @@ let lastWrittenFiles: string[] = []  // track files written by current ingest fo
 // Track whether any task has been processed since the last drain.
 // Prevents the sweep from running on every idle/no-op call.
 let processedSinceDrain = false
+let deferredBatchIdsSinceDrain = new Set<string>()
+let deferredBatchOptionsSinceDrain = new Map<string, { runStrategyEnhancement: boolean; runEmbeddings: boolean }>()
 // Abort controller for the review-sweep LLM call so switching projects
 // cancels a long-running judgment instead of burning tokens.
 let sweepAbortController: AbortController | null = null
@@ -149,6 +166,7 @@ export async function enqueueIngest(
 export async function enqueueBatch(
   projectId: string,
   files: Array<{ sourcePath: string; folderContext: string }>,
+  options: Pick<AutoIngestOptions, "deferPostProcessing" | "qualityMode" | "strategyCompileMode" | "runStrategyEnhancement"> = {},
 ): Promise<string[]> {
   if (!currentProjectId || currentProjectId !== projectId) {
     throw new Error(
@@ -157,6 +175,10 @@ export async function enqueueBatch(
   }
 
   const ids: string[] = []
+  const batchId = options.deferPostProcessing
+    ? `batch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    : undefined
+  const strategyCompileMode = resolveStrategyCompileMode(options)
   for (const file of files) {
     const task: IngestTask = {
       id: generateId(),
@@ -167,6 +189,11 @@ export async function enqueueBatch(
       addedAt: Date.now(),
       error: null,
       retryCount: 0,
+      batchId,
+      deferPostProcessing: options.deferPostProcessing,
+      qualityMode: options.qualityMode ?? "balanced",
+      strategyCompileMode,
+      runStrategyEnhancement: strategyCompileMode === "deferred",
     }
     queue.push(task)
     ids.push(task.id)
@@ -304,6 +331,8 @@ export function clearQueueState(): void {
   sweepAbortController = null
   lastWrittenFiles = []
   processedSinceDrain = false
+  deferredBatchIdsSinceDrain = new Set()
+  deferredBatchOptionsSinceDrain = new Map()
 }
 
 /**
@@ -349,9 +378,81 @@ export async function pauseQueue(): Promise<void> {
   currentProjectPath = ""
   lastWrittenFiles = []
   processedSinceDrain = false
+  deferredBatchIdsSinceDrain = new Set()
+  deferredBatchOptionsSinceDrain = new Map()
 }
 
 // ── Restore on startup ───────────────────────────────────────────────────
+
+function resolveTaskSourcePath(projectPath: string, task: IngestTask): string {
+  return isAbsolutePath(task.sourcePath)
+    ? normalizePath(task.sourcePath)
+    : `${projectPath}/${task.sourcePath}`
+}
+
+function markDeferredBatchForDrain(task: Pick<IngestTask, "deferPostProcessing" | "batchId" | "strategyCompileMode" | "runStrategyEnhancement">): void {
+  if (!task.deferPostProcessing || !task.batchId) return
+  deferredBatchIdsSinceDrain.add(task.batchId)
+  const nextRunStrategy = shouldRunDeferredStrategyCompile(task)
+  const existing = deferredBatchOptionsSinceDrain.get(task.batchId)
+  deferredBatchOptionsSinceDrain.set(task.batchId, {
+    runStrategyEnhancement: existing
+      ? existing.runStrategyEnhancement || nextRunStrategy
+      : nextRunStrategy,
+    runEmbeddings: existing
+      ? existing.runEmbeddings || nextRunStrategy
+      : nextRunStrategy,
+  })
+}
+
+async function reconcileRestoredProcessingTasks(
+  projectPath: string,
+  tasks: IngestTask[],
+): Promise<{ tasks: IngestTask[]; restored: number; completedRemoved: number }> {
+  const reconciled: IngestTask[] = []
+  let restored = 0
+  let completedRemoved = 0
+
+  for (const task of tasks) {
+    if (task.status !== "processing") {
+      reconciled.push(task)
+      continue
+    }
+
+    const fullSourcePath = resolveTaskSourcePath(projectPath, task)
+    try {
+      const fingerprint = await getSourceFingerprint(projectPath, fullSourcePath)
+      const hit = await checkIngestCacheDetailed(projectPath, getFileName(fullSourcePath), "", {
+        sourceKey: fingerprint.sourceKey,
+        sourceFingerprint: fingerprint,
+      })
+      if (hit) {
+        completedRemoved++
+        processedSinceDrain = true
+        if (
+          task.deferPostProcessing &&
+          task.batchId &&
+          !(hit.entry.completedStages ?? []).includes("postProcessing")
+        ) {
+          markDeferredBatchForDrain(task)
+        }
+        console.log(`[Ingest Queue] Reconciled completed processing task from cache: ${task.sourcePath}`)
+        continue
+      }
+    } catch (err) {
+      console.warn(
+        `[Ingest Queue] Could not reconcile processing task ${task.sourcePath}; will retry`,
+        err,
+      )
+    }
+
+    task.status = "pending"
+    restored++
+    reconciled.push(task)
+  }
+
+  return { tasks: reconciled, restored, completedRemoved }
+}
 
 /**
  * Load queue from disk and resume processing. Called on app startup
@@ -370,6 +471,8 @@ export async function restoreQueue(
   processing = false
   currentAbortController = null
   lastWrittenFiles = []
+  deferredBatchIdsSinceDrain = new Set()
+  deferredBatchOptionsSinceDrain = new Map()
   currentProjectId = projectId
   currentProjectPath = pp
 
@@ -386,23 +489,23 @@ export async function restoreQueue(
     )
   }
 
-  // Reset any "processing" tasks back to "pending" (interrupted by app close)
-  let restored = 0
-  for (const task of mine) {
-    if (task.status === "processing") {
-      task.status = "pending"
-      restored++
-    }
-  }
+  const reconciliation = await reconcileRestoredProcessingTasks(pp, mine)
 
-  queue = mine
+  queue = reconciliation.tasks
   await saveQueue(pp)
+  if (reconciliation.completedRemoved > 0) {
+    writeProjectQualityReport(pp).catch((err) =>
+      console.warn("[Ingest Queue] Failed to refresh project quality report after restore reconciliation:", err),
+    )
+  }
 
   const pending = queue.filter((t) => t.status === "pending").length
   const failed = queue.filter((t) => t.status === "failed").length
 
-  if (pending > 0 || restored > 0) {
-    console.log(`[Ingest Queue] Restored: ${pending} pending, ${failed} failed, ${restored} resumed from interrupted`)
+  if (pending > 0 || reconciliation.restored > 0 || reconciliation.completedRemoved > 0) {
+    console.log(
+      `[Ingest Queue] Restored: ${pending} pending, ${failed} failed, ${reconciliation.restored} resumed from interrupted, ${reconciliation.completedRemoved} completed from cache`,
+    )
     processNext(projectId)
   }
 }
@@ -422,8 +525,26 @@ async function onQueueDrained(projectId: string, projectPath: string): Promise<v
   const signal = sweepAbortController.signal
 
   try {
-    const { sweepResolvedReviews } = await import("@/lib/sweep-reviews")
-    await sweepResolvedReviews(projectPath, signal)
+    if (deferredBatchIdsSinceDrain.size > 0) {
+      const { runDeferredIngestPostProcessing } = await import("@/lib/ingest-post-processing")
+      const batchIds = Array.from(deferredBatchIdsSinceDrain)
+      const batchOptions = new Map(deferredBatchOptionsSinceDrain)
+      deferredBatchIdsSinceDrain = new Set()
+      deferredBatchOptionsSinceDrain = new Map()
+      for (const batchId of batchIds) {
+        if (signal.aborted) break
+        await runDeferredIngestPostProcessing(projectPath, batchId, {
+          signal,
+          runReviewSweep: true,
+          runStrategyEnhancement: batchOptions.get(batchId)?.runStrategyEnhancement ?? true,
+          runEmbeddings: batchOptions.get(batchId)?.runEmbeddings ?? true,
+        })
+      }
+    } else {
+      const { sweepResolvedReviews } = await import("@/lib/sweep-reviews")
+      await sweepResolvedReviews(projectPath, signal)
+      await writeProjectQualityReport(projectPath)
+    }
   } catch (err) {
     console.error("[Ingest Queue] Failed to load sweep-reviews:", err)
   } finally {
@@ -493,7 +614,13 @@ async function processNext(projectId: string): Promise<void> {
   lastWrittenFiles = []
 
   try {
-    const writtenFiles = await autoIngest(pp, fullSourcePath, llmConfig, currentAbortController.signal, next.folderContext)
+    const writtenFiles = await autoIngest(pp, fullSourcePath, llmConfig, currentAbortController.signal, next.folderContext, {
+      batchId: next.batchId,
+      deferPostProcessing: next.deferPostProcessing,
+      qualityMode: next.qualityMode ?? "balanced",
+      strategyCompileMode: next.strategyCompileMode,
+      runStrategyEnhancement: next.runStrategyEnhancement,
+    })
     // Stale-context guard: project switched during the long LLM call.
     // Bail without mutating queue or writing to disk — pauseQueue has
     // already persisted the correct state to the old project's file,
@@ -514,6 +641,7 @@ async function processNext(projectId: string): Promise<void> {
     lastWrittenFiles = []
     queue = queue.filter((t) => t.id !== next.id)
     processedSinceDrain = true
+    markDeferredBatchForDrain(next)
     await saveQueue(pp)
 
     console.log(`[Ingest Queue] Done: ${next.sourcePath}`)

@@ -72,6 +72,7 @@ export type AgentLoopStatus =
 export type LoopTaskType = "revision_card" | "wiki_feedback"
 export type LoopTaskStatus = "open" | "active" | "resolved" | "deferred"
 
+import type { FileFingerprint } from "@/lib/source-fingerprint"
 import type {
   GateStatus,
   HealthScorecard,
@@ -151,13 +152,193 @@ export interface DocumentIR {
   blocks: DocumentBlock[]
 }
 
-export type SourceKind = "pdf" | "docx" | "doc" | "xmind" | "generic"
+export interface TaskEvidenceText {
+  text: string
+  evidenceRefs: string[]
+}
+
+export interface TaskRoleProfile {
+  roleName: string
+  responsibilities: string[]
+  kpis: string[]
+  collaboratorRoles: string[]
+  evidenceRefs: string[]
+}
+
+export type TaskModule =
+  | "new_product_launch"
+  | "existing_product_growth"
+  | "visual_content"
+  | "traffic_promotion"
+  | "customer_conversion"
+  | "creator_content"
+  | "product_operations"
+  | "unknown"
+
+export type BusinessTaskStatus =
+  | "not_started"
+  | "in_progress"
+  | "blocked"
+  | "done"
+  | "deferred"
+  | "unknown"
+
+export interface TaskTaxonomyElement {
+  fieldKey: string
+  label: string
+  aliases: string[]
+  requiredForReady: boolean
+  conditionalRequirement?: string
+  evidenceRefs: string[]
+}
+
+export interface TaskTaxonomyModule {
+  moduleId: TaskModule
+  label: string
+  aliases: string[]
+  examples: string[]
+  evidenceRefs: string[]
+}
+
+export interface TaskTaxonomy {
+  taxonomyId: string
+  sourceDocId: string
+  sourceName: string
+  sourcePath: string
+  modules: TaskTaxonomyModule[]
+  taskElements: TaskTaxonomyElement[]
+  priorityValues: string[]
+  statusValues: string[]
+  evidenceRefs: string[]
+}
+
+export interface TaskCardDraft {
+  taskId: string
+  title: string
+  taskModule?: TaskModule
+  productId?: string
+  taskItem?: string
+  taskStatus?: BusinessTaskStatus
+  resultFeedback?: string[]
+  trigger: string
+  targetObject: string
+  problemEvidence: string[]
+  ownerRole: string
+  normalizedOwnerRole?: string
+  collaboratorRoles: string[]
+  actionSteps: string[]
+  acceptanceMetrics: string[]
+  cadence: string
+  reviewRequirement: string
+  sourceRefs: string[]
+  status: "draft" | "needs_review"
+  timeRange?: {
+    label: string
+    start?: string | null
+    end?: string | null
+  }
+  priority?: "critical" | "high" | "medium" | "low" | "unknown"
+  importanceScore?: number
+  executableScore?: number
+  qualityScore?: number
+  sourceDocType?: TaskContextPack["docRole"]
+  generationSource?: "meeting_action" | "manual_confirmed" | "derived_from_review"
+  completionSources?: string[]
+  rulePackRefs?: string[]
+  roleContextRefs?: string[]
+  extractionWarnings?: string[]
+  quality?: TaskCardQualityScorecard
+}
+
+export interface TaskCardQualityScorecard {
+  score: number
+  completenessScore?: number
+  executableScore?: number
+  evidenceScore?: number
+  level: "ready" | "needs_review"
+  missingElements: string[]
+  strengths: string[]
+  reviewNotes: string[]
+}
+
+export interface TaskQualitySummary {
+  total: number
+  ready: number
+  needsReview: number
+  averageScore: number
+  topMissingElements: string[]
+}
+
+export interface TaskSourcePolicy {
+  sourceDocRole: TaskContextPack["docRole"]
+  canGenerateTaskCards: boolean
+  canProvideRules: boolean
+  canProvideRoleContext: boolean
+  canProvideMetrics: boolean
+  defaultIndexVisibility: "task_index" | "context_only" | "hidden"
+}
+
+export interface TaskRulePack {
+  taxonomyRef?: string
+  requiredElements: string[]
+  taskElements?: TaskTaxonomyElement[]
+  moduleClassificationRules?: Array<{
+    moduleId: TaskModule
+    label: string
+    aliases: string[]
+    examples: string[]
+  }>
+  fieldExtractionRules?: string[]
+  qualityRules?: string[]
+  scoringWeights: Record<string, number>
+  qualityLevels: string[]
+  reviewReasons: string[]
+  taskTemplates: string[]
+  fixSuggestions: string[]
+  evidenceRefs: string[]
+}
+
+export interface RoleContextIndex {
+  roles: TaskRoleProfile[]
+  responsibilities: string[]
+  kpis: string[]
+  collaboratorRoles: string[]
+  ownerInferenceHints: string[]
+  evidenceRefs: string[]
+}
+
+export interface TaskContextPack {
+  schemaVersion: "task_context_pack_v1"
+  packId: string
+  sourceDocId: string
+  sourceName: string
+  sourcePath: string
+  sourceKind: SourceKind
+  docRole: "role_kpi_source" | "meeting_task_source" | "task_mechanism_source" | "mixed_task_source" | "unknown"
+  operatingGoals: TaskEvidenceText[]
+  roleProfiles: TaskRoleProfile[]
+  taskTriggers: TaskEvidenceText[]
+  taskCandidates: TaskCardDraft[]
+  metricRules: TaskEvidenceText[]
+  collaborationRules: TaskEvidenceText[]
+  reviewRules: TaskEvidenceText[]
+  sourcePolicy?: TaskSourcePolicy
+  taskRulePack?: TaskRulePack | null
+  taskTaxonomy?: TaskTaxonomy | null
+  roleContextIndex?: RoleContextIndex | null
+  evidenceAnchors: string[]
+  qualityWarnings: string[]
+  taskQualitySummary?: TaskQualitySummary
+}
+
+export type SourceKind = "pdf" | "docx" | "doc" | "xmind" | "xlsx" | "xls" | "ods" | "generic"
 export type PdfBackendMode = "pdfium" | "opendataloader"
 export type DocumentBackendMode =
   | PdfBackendMode
   | "docx_core"
   | "docx_enhanced"
   | "xmind_core"
+  | "spreadsheet_core"
   | "soffice_docx_bridge"
   | "generic"
 
@@ -308,6 +489,9 @@ export interface EnhancedDocumentArtifactManifest {
   sourcePath: string
   sourceKind: SourceKind
   backend: DocumentBackendMode
+  artifactSchemaVersion?: number
+  sourceFingerprint?: FileFingerprint
+  prepareOptionsSignature?: string
   generatedAt: string
   outputDir: string
   analysisPath: string | null
@@ -366,6 +550,7 @@ export interface GroundTruthFieldValue {
   key: string
   label: string
   value: string
+  semanticUnitIds?: string[]
   evidenceBlockRefs: string[]
   notes?: string
   status: GroundTruthFieldStatus
@@ -473,6 +658,11 @@ export interface SceneCompilePagePlan {
     | "evidence_cases"
     | "source_summary"
     | "mindmap_structure"
+    | "task_roles"
+    | "task_cards"
+    | "task_quality"
+    | "task_collaboration"
+    | "task_reviews"
     | "hero_audiences"
     | "hero_value_props"
     | "hero_creative_assets"
@@ -495,6 +685,9 @@ export interface SceneCompilePlan {
 
 export interface CompileIR {
   sourceSummary: string
+  taskContextPack?: TaskContextPack | null
+  consumedSemanticUnitIds?: string[]
+  unresolvedSemanticRelationIds?: string[]
   mainlineSteps: string[]
   sopSteps: string[]
   keyJudgements: string[]
@@ -503,6 +696,7 @@ export interface CompileIR {
   boundaries: string[]
   evidenceCases: string[]
   imageEvidence: string[]
+  imageEvidenceRefs?: KnowledgeImageEvidenceRef[]
   metrics: string[]
   keyEntities: EntityCandidate[]
   businessObjects: BusinessObjectProjection[]
@@ -515,6 +709,15 @@ export interface CompileIR {
   mindmapSummary?: string[]
   openQuestions: string[]
   sourceRefsByField: Record<string, string[]>
+}
+
+export interface KnowledgeImageEvidenceRef {
+  imageId: string
+  url: string
+  caption: string
+  sourceRef: string
+  sourceAnchorId?: string | null
+  page?: number | null
 }
 
 export interface CompileCoverageEntry {
@@ -560,6 +763,43 @@ export type StrategyCardType =
 
 export type StrategyCardStatus = "draft" | "confirmed" | "rejected" | "promoted_to_skill"
 
+export type StrategyActionCardStatus = StrategyCardStatus
+
+export interface StrategyCategory {
+  categoryId: StrategyCardType
+  label: string
+  sourceFieldKeys: string[]
+  actionCardIds: string[]
+  summary: string
+}
+
+export interface StrategyActionCard {
+  actionCardId: string
+  fingerprint: string
+  sceneId: string
+  docId: string
+  category: StrategyCardType
+  title: string
+  triggerCondition: string
+  requiredInputs: string[]
+  actionSteps: string[]
+  outputArtifact: string
+  validationMetrics: string[]
+  evidenceRefs: string[]
+  semanticUnitIds?: string[]
+  blockedBySemanticRelationIds?: string[]
+  wikiRefs: string[]
+  missingInputs: string[]
+  confidence: number
+  skillFamily: StrategyCardType
+  targetFieldKey?: string | null
+  sourceFieldKeys: string[]
+  sourceFindingIds?: string[]
+  status: StrategyActionCardStatus
+  createdAt: string
+  updatedAt: string
+}
+
 export interface StrategyCard {
   cardId: string
   sceneId: string
@@ -570,6 +810,8 @@ export interface StrategyCard {
   whyNow: string
   validationPlan: string
   evidenceRefs: string[]
+  semanticUnitIds?: string[]
+  blockedBySemanticRelationIds?: string[]
   linkedWikiRefs: string[]
   linkedDecisionPointIds: string[]
   targetFieldKey?: string | null
@@ -580,6 +822,7 @@ export interface StrategyCard {
 }
 
 export interface StrategyBundle {
+  schemaVersion?: number
   bundleId: string
   docId: string
   sceneId: string
@@ -587,7 +830,13 @@ export interface StrategyBundle {
   summary: string
   strategyMarkdown: string
   strategyCards: StrategyCard[]
+  strategyCategories?: StrategyCategory[]
+  actionCards?: StrategyActionCard[]
+  warnings?: string[]
+  llmEnhanced?: boolean
   linkedResearchFindingIds: string[]
+  consumedSemanticUnitIds?: string[]
+  unresolvedSemanticRelationIds?: string[]
   linkedRevisionCardIds: string[]
   linkedWikiRefs: string[]
   evidenceRefs: string[]
@@ -612,6 +861,13 @@ export interface StrategyCoverageEntry {
     | "missing_decision_projection"
     | "missing_validation_plan"
     | "missing_scene_mapping"
+    | "missing_trigger_condition"
+    | "missing_action_steps"
+    | "missing_output_artifact"
+    | "missing_validation_metric"
+    | "missing_wiki_refs"
+    | "missing_evidence_refs"
+    | "not_skill_ready"
 }
 
 export interface StrategyCoverageReport {
@@ -640,9 +896,14 @@ export interface StrategySkillCandidateManifest {
   sceneId: string
   linkedDocIds: string[]
   originStrategyCardIds: string[]
+  originActionCardIds?: string[]
   wikiRefs: string[]
   sourceRefs: string[]
   validationCriteria: string[]
+  requiredInputs?: string[]
+  outputArtifact?: string
+  actionSteps?: string[]
+  schemaVersion?: number
   promotionState: SkillPromotionState
   generatedAt: string
 }
@@ -656,6 +917,7 @@ export interface ApprovedSkillSpec {
   path: string
   inputSchema: Record<string, unknown>
   outputSchema: Record<string, unknown>
+  executionSpec?: Record<string, unknown>
   wikiRefs: string[]
   sourceRefs: string[]
 }
@@ -673,6 +935,79 @@ export interface AgentRunRequest {
   runMode: AgentRunMode
   selectedSkillIds: string[]
   groundingSources: string[]
+  taskInput?: Record<string, unknown>
+  createReviewItem?: boolean
+}
+
+export type ExecutionPhaseStatus = "pending" | "running" | "completed" | "degraded" | "failed" | "skipped"
+
+export interface ExecutionTimelineEntry {
+  phase: string
+  status: ExecutionPhaseStatus
+  title: string
+  detail: string
+  startedAt: string
+  endedAt: string
+  durationMs: number
+  severity: "info" | "warning" | "error"
+  data?: Record<string, unknown>
+}
+
+export interface AgentRunDegradationReason {
+  code: string
+  title: string
+  detail: string
+  recoverable: boolean
+  recommendedAction: string
+}
+
+export type SkillStepStatus = "completed" | "degraded" | "failed" | "skipped"
+export type SkillStepTaskType =
+  | "read_file"
+  | "local_tool"
+  | "data_extract"
+  | "data_transform"
+  | "human_review"
+  | "llm_reasoning"
+
+export interface SkillStepTask {
+  stepIndex: number
+  stepTitle: string
+  taskType: SkillStepTaskType
+  toolName?: string
+  contextRefs: string[]
+  inputKeys: string[]
+  dataNeeds: string[]
+  expectedStepOutput: string
+}
+
+export interface SkillExecutionPlan {
+  planId: string
+  executionMode: string
+  summary: string
+  stepTasks: SkillStepTask[]
+  requiredContextRefs: string[]
+  expectedOutput: string
+  humanReviewPoints: string[]
+}
+
+export interface SkillStepExecution {
+  stepIndex: number
+  stepTitle: string
+  taskType?: SkillStepTaskType | string
+  toolName?: string
+  inputRefs: string[]
+  contextRefs: string[]
+  status: SkillStepStatus
+  reasoningSummary?: string
+  stepOutput: string
+  evidenceRefs: string[]
+  validationNotes: string[]
+  nextConstraints?: string[]
+  startedAt: string
+  endedAt: string
+  durationMs: number
+  degradationReason?: AgentRunDegradationReason | null
 }
 
 export interface AgentRunResult {
@@ -683,6 +1018,17 @@ export interface AgentRunResult {
   runMode: AgentRunMode
   selectedSkillIds: string[]
   groundingSources: string[]
+  status?: "needs_input" | "running" | "completed" | "validation_failed" | "degraded" | "error"
+  executedSkills?: Array<Record<string, unknown>>
+  contextRefs?: string[]
+  structuredOutput?: Record<string, unknown>
+  validationErrors?: Array<Record<string, unknown>>
+  executionTimeline?: ExecutionTimelineEntry[]
+  degradationReason?: AgentRunDegradationReason | null
+  stepExecutions?: SkillStepExecution[]
+  executionPlan?: SkillExecutionPlan | Record<string, unknown>
+  executionMode?: string
+  reviewItemId?: string | null
   resultSummary: string
   trace: string[]
   outputArtifacts: string[]
@@ -738,6 +1084,7 @@ export interface AgentModeReport {
   documentBackendStatus: DocumentBackendStatus
   documentArtifacts?: EnhancedDocumentArtifactManifest | null
   pdfArtifacts?: EnhancedPdfArtifactManifest | null
+  taskContextPack?: TaskContextPack | null
 }
 
 export interface LoopTask {

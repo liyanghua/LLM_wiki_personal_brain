@@ -78,6 +78,45 @@ export interface KnowledgeAnswerMeta {
   supplements: SupplementInsight[]
 }
 
+export interface ChatImageEvidence {
+  imageId: string
+  displayId?: string
+  relPath: string
+  caption: string
+  fallbackCaption?: string
+  sourcePath: string
+  page: number | null
+  matchedReason: string
+  status: "indexed" | "captioned" | "needs_caption" | "missing_file"
+  score: number
+}
+
+export interface ChatTaskEvidence {
+  taskId: string
+  title: string
+  taskModule?: string
+  taskModuleLabel?: string
+  productId?: string
+  taskItem?: string
+  taskStatus?: string
+  resultFeedback?: string[]
+  ownerRole: string
+  collaboratorRoles: string[]
+  timeRangeLabel: string
+  cadence: string
+  priority: string
+  qualityScore: number
+  executableScore: number
+  importanceScore: number
+  status: "draft" | "needs_review"
+  qualityBand: "ready" | "needs_review"
+  matchedReasons: string[]
+  missingElements: string[]
+  reviewNotes?: string[]
+  sourceRefs: string[]
+  wikiRefs: string[]
+}
+
 export interface DisplayMessage {
   id: string
   role: "user" | "assistant" | "system"
@@ -87,6 +126,35 @@ export interface DisplayMessage {
   references?: MessageReference[]  // pages cited in this response, saved at creation time
   answerMeta?: KnowledgeAnswerMeta | null
   revisionMeta?: RevisionMessageMeta | null
+  imageEvidence?: ChatImageEvidence[]
+  taskEvidence?: ChatTaskEvidence[]
+}
+
+export function conversationMatchesScope(
+  conversation: Conversation,
+  scope: ConversationScope,
+  options: {
+    docId?: string | null
+    loopId?: string | null
+  } = {},
+): boolean {
+  if ((conversation.scope ?? "global") !== scope) return false
+  if (scope === "revision-workbench" && options.docId) {
+    return (conversation.docId ?? null) === options.docId
+  }
+  if (scope === "revision-loop" && options.docId) {
+    return (conversation.docId ?? null) === options.docId
+      && (conversation.loopId ?? null) === (options.loopId ?? null)
+  }
+  return true
+}
+
+export function shouldShowConversationInSidebar(
+  conversation: Conversation,
+  messageCount: number,
+): boolean {
+  if (messageCount > 0) return true
+  return (conversation.scope ?? "global") !== "global"
 }
 
 interface AddMessageOptions {
@@ -94,6 +162,8 @@ interface AddMessageOptions {
   references?: MessageReference[]
   answerMeta?: KnowledgeAnswerMeta | null
   revisionMeta?: RevisionMessageMeta | null
+  imageEvidence?: ChatImageEvidence[]
+  taskEvidence?: ChatTaskEvidence[]
   skipTitleAuto?: boolean
 }
 
@@ -103,6 +173,8 @@ interface ChatState {
   messages: DisplayMessage[]
   isStreaming: boolean
   streamingContent: string
+  streamingImageEvidence: ChatImageEvidence[]
+  streamingTaskEvidence: ChatTaskEvidence[]
   mode: "chat" | "ingest"
   ingestSource: string | null
   maxHistoryMessages: number
@@ -126,8 +198,16 @@ interface ChatState {
   setMessages: (messages: DisplayMessage[]) => void
   setConversations: (conversations: Conversation[]) => void
   setStreaming: (streaming: boolean) => void
+  setStreamingImageEvidence: (imageEvidence: ChatImageEvidence[]) => void
+  setStreamingTaskEvidence: (taskEvidence: ChatTaskEvidence[]) => void
   appendStreamToken: (token: string) => void
-  finalizeStream: (content: string, references?: MessageReference[], answerMeta?: KnowledgeAnswerMeta | null) => void
+  finalizeStream: (
+    content: string,
+    references?: MessageReference[],
+    answerMeta?: KnowledgeAnswerMeta | null,
+    imageEvidence?: ChatImageEvidence[],
+    taskEvidence?: ChatTaskEvidence[],
+  ) => void
   updateMessage: (id: string, patch: Partial<DisplayMessage>) => void
   setMode: (mode: ChatState["mode"]) => void
   setIngestSource: (path: string | null) => void
@@ -156,6 +236,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   messages: [],
   isStreaming: false,
   streamingContent: "",
+  streamingImageEvidence: [],
+  streamingTaskEvidence: [],
   mode: "chat",
   ingestSource: null,
   maxHistoryMessages: 10,
@@ -243,6 +325,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         references: options?.references,
         answerMeta: options?.answerMeta ?? null,
         revisionMeta: options?.revisionMeta ?? null,
+        imageEvidence: options?.imageEvidence,
+        taskEvidence: options?.taskEvidence,
       }
 
       // Auto-set title from first user message (first 50 chars)
@@ -272,22 +356,34 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   setConversations: (conversations) => set({ conversations }),
 
-  setStreaming: (isStreaming) => set({ isStreaming }),
+  setStreaming: (isStreaming) =>
+    set((state) => ({
+      isStreaming,
+      streamingImageEvidence: isStreaming ? state.streamingImageEvidence : [],
+      streamingTaskEvidence: isStreaming ? state.streamingTaskEvidence : [],
+    })),
+
+  setStreamingImageEvidence: (imageEvidence) => set({ streamingImageEvidence: imageEvidence }),
+  setStreamingTaskEvidence: (taskEvidence) => set({ streamingTaskEvidence: taskEvidence }),
 
   appendStreamToken: (token) =>
     set((state) => ({
       streamingContent: state.streamingContent + token,
     })),
 
-  finalizeStream: (content, references, answerMeta) =>
+  finalizeStream: (content, references, answerMeta, imageEvidence, taskEvidence) =>
     set((state) => {
       const { activeConversationId, conversations } = state
       if (!activeConversationId) {
         return {
           isStreaming: false,
           streamingContent: "",
+          streamingImageEvidence: [],
+          streamingTaskEvidence: [],
         }
       }
+      const resolvedImageEvidence = imageEvidence ?? state.streamingImageEvidence
+      const resolvedTaskEvidence = taskEvidence ?? state.streamingTaskEvidence
 
       const newMessage: DisplayMessage = {
         id: nextId(),
@@ -297,11 +393,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
         conversationId: activeConversationId,
         references,
         answerMeta: answerMeta ?? null,
+        imageEvidence: resolvedImageEvidence.length > 0 ? resolvedImageEvidence : undefined,
+        taskEvidence: resolvedTaskEvidence.length > 0 ? resolvedTaskEvidence : undefined,
       }
 
       return {
         isStreaming: false,
         streamingContent: "",
+        streamingImageEvidence: [],
+        streamingTaskEvidence: [],
         messages: [...state.messages, newMessage],
         conversations: conversations.map((c) =>
           c.id === activeConversationId

@@ -9,13 +9,14 @@ from personal_brain.agent.tool_schemas import (
     ReadPageInput,
     RunLintInput,
     SearchMemoryInput,
+    SearchTasksInput,
     SearchWikiInput,
     StartExtractionInterviewInput,
 )
 from personal_brain.config import BrainConfig
 from personal_brain.extraction.service import ExtractionInterviewService
 from personal_brain.lint.service import WikiLintService
-from personal_brain.models import ToolSpec
+from personal_brain.models import AgentRunRequest, ToolSpec
 from personal_brain.retrieval.query_engine import QueryEngine
 from personal_brain.skills.strategy_runtime import StrategyRuntimeService
 from personal_brain.writeback.service import WritebackService
@@ -44,6 +45,20 @@ class ToolRegistry:
                         "mode": {"type": "string"},
                         "collection": {"type": "string"},
                         "results": {"type": "array"},
+                    },
+                },
+            ),
+            ToolSpec(
+                name="search_tasks",
+                description="Search structured business task cards by role, time range, quality, and query text.",
+                input_schema=SearchTasksInput.model_json_schema(),
+                output_schema={
+                    "type": "object",
+                    "properties": {
+                        "backend": {"type": "string"},
+                        "index_path": {"type": "string"},
+                        "results": {"type": "array"},
+                        "warnings": {"type": "array"},
                     },
                 },
             ),
@@ -114,17 +129,45 @@ class ToolRegistry:
             skill = approved.get(skill_id)
             if not skill:
                 raise KeyError(f"Unknown approved skill: {skill_id}")
-            objective = str(payload.get("objective") or "").strip() or skill.title
-            grounding_sources = payload.get("grounding_sources") or skill.wiki_refs or []
-            return {
-                "recommendation": objective,
-                "why_now": f"通过项目已批准技能 {skill.title} 触发，建议结合当前业务 Wiki 执行。",
-                "validation_plan": "请先在人审或策略工作台中验证输出，再决定是否进入修订闭环。",
-                "evidence_refs": grounding_sources,
-            }
+            doc_id = str(payload.get("doc_id") or "").strip()
+            if not doc_id:
+                raise ValueError("approved skill execution requires doc_id")
+            task_input = {key: value for key, value in payload.items() if key not in {
+                "project_path",
+                "doc_id",
+                "scene_id",
+                "run_mode",
+                "selected_skill_ids",
+                "grounding_sources",
+                "create_review_item",
+            }}
+            request = AgentRunRequest(
+                project_path=str(payload.get("project_path") or (self.config.workspace_root or self.config.root)),
+                doc_id=doc_id,
+                scene_id=str(payload.get("scene_id") or skill.scene_id),
+                run_mode=str(payload.get("run_mode") or "generate_strategy"),
+                selected_skill_ids=[skill_id],
+                grounding_sources=[item for item in payload.get("grounding_sources", skill.wiki_refs) if isinstance(item, str)],
+                task_input=task_input,
+                create_review_item=bool(payload.get("create_review_item", False)),
+            )
+            return self.strategy_runtime.run_agent(request).model_dump(mode="json")
         if name == "search_wiki":
             validated = SearchWikiInput.model_validate(payload)
             return self.query_engine.search_wiki(validated.query)
+        if name == "search_tasks":
+            validated = SearchTasksInput.model_validate(payload)
+            return self.query_engine.search_tasks(
+                query=validated.query,
+                role=validated.role,
+                start_date=validated.start_date,
+                end_date=validated.end_date,
+                task_module=validated.task_module,
+                product_id=validated.product_id,
+                task_status=validated.task_status,
+                include_needs_review=validated.include_needs_review,
+                limit=validated.limit,
+            )
         if name == "read_page":
             validated = ReadPageInput.model_validate(payload)
             return {"page": self.query_engine.read_page(validated.page_id)}

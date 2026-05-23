@@ -1,4 +1,4 @@
-import { readFile, writeFile, listDirectory } from "@/commands/fs"
+import { readFile, writeFile, listDirectory, preprocessFile } from "@/commands/fs"
 import { streamChat } from "@/lib/llm-client"
 import type { LlmConfig } from "@/stores/wiki-store"
 import { useWikiStore } from "@/stores/wiki-store"
@@ -7,6 +7,14 @@ import { useActivityStore } from "@/stores/activity-store"
 import { useReviewStore, type ReviewItem } from "@/stores/review-store"
 import { getFileName, normalizePath } from "@/lib/path-utils"
 import { checkIngestCache, saveIngestCache } from "@/lib/ingest-cache"
+import {
+  resolveStrategyCompileMode,
+  shouldRunStrategyCompileInCore,
+  type AutoIngestOptions,
+} from "@/lib/ingest-options"
+import { getSourceFingerprint, sourceKeyForPath } from "@/lib/source-fingerprint"
+import { createIngestRunRecorder } from "@/lib/ingest-timing"
+import { writeProjectQualityReport } from "@/lib/project-quality-report"
 import { sanitizeIngestedFileContent } from "@/lib/ingest-sanitize"
 import { mergePageContent, type MergeFn } from "@/lib/page-merge"
 import { withProjectLock } from "@/lib/project-mutex"
@@ -52,6 +60,7 @@ import { buildStructuredContext, runStep15Structuring } from "@/lib/structuring"
 import { detectSourceKind, prepareDocumentForIngest } from "@/lib/document-preparation"
 import { writeSceneCompile } from "@/lib/scene-compile"
 import { writeStrategyBundle } from "@/lib/strategy-compile"
+import { buildSemanticConflictReviewItems, rebuildSemanticUnitIndex } from "@/lib/semantic-units"
 import {
   appendQualityDraftReport,
   ensureWorkingDraft,
@@ -280,9 +289,10 @@ export async function autoIngest(
   llmConfig: LlmConfig,
   signal?: AbortSignal,
   folderContext?: string,
+  options: AutoIngestOptions = {},
 ): Promise<string[]> {
   return withProjectLock(normalizePath(projectPath), () =>
-    autoIngestImpl(projectPath, sourcePath, llmConfig, signal, folderContext),
+    autoIngestImpl(projectPath, sourcePath, llmConfig, signal, folderContext, options),
   )
 }
 
@@ -292,11 +302,19 @@ async function autoIngestImpl(
   llmConfig: LlmConfig,
   signal?: AbortSignal,
   folderContext?: string,
+  options: AutoIngestOptions = {},
 ): Promise<string[]> {
   const pp = normalizePath(projectPath)
   const sp = normalizePath(sourcePath)
   const activity = useActivityStore.getState()
   const fileName = getFileName(sp)
+  const qualityMode = options.qualityMode ?? "balanced"
+  const strategyCompileMode = resolveStrategyCompileMode(options)
+  const fallbackSourceKey = sourceKeyForPath(pp, sp)
+  const recorder = createIngestRunRecorder(pp, {
+    sourceKey: fallbackSourceKey,
+    batchId: options.batchId,
+  })
   console.log(`[ingest:diag] autoIngestImpl ENTRY for "${fileName}" (project="${pp}", source="${sp}")`)
   const activityId = activity.addItem({
     type: "ingest",
@@ -304,10 +322,11 @@ async function autoIngestImpl(
     status: "running",
     detail: "解析业务文档...",
     filesWritten: [],
+    phase: "prepareDocumentForIngest",
+    batchId: options.batchId,
   })
 
-  const [sourceContent, schema, purpose, index, overview] = await Promise.all([
-    tryReadFile(sp),
+  const [schema, purpose, index, overview] = await Promise.all([
     tryReadFile(`${pp}/schema.md`),
     tryReadFile(`${pp}/purpose.md`),
     tryReadFile(`${pp}/wiki/index.md`),
@@ -324,12 +343,52 @@ async function autoIngestImpl(
       ? llmConfig.model?.trim()
       : multimodalConfig.model?.trim(),
   )
-  const preparedDocument = await prepareDocumentForIngest(pp, sp, {
-    preferredPdfBackend,
-    multimodalEnabled: multimodalConfig.enabled && ["pdf", "docx", "doc", "xmind"].includes(sourceKind),
-    multimodalAvailable,
-  }).catch(() => null)
-  const analysisBaseContent = preparedDocument?.analysisMarkdown ?? sourceContent
+
+  const sourceFingerprint = await recorder.time("fingerprint", () =>
+    getSourceFingerprint(pp, sp),
+  ).catch((err) => {
+    console.warn(`[ingest:fingerprint] failed for "${fileName}":`, err instanceof Error ? err.message : err)
+    return null
+  })
+  const sourceKey = sourceFingerprint?.sourceKey ?? fallbackSourceKey
+  const earlyCachedFiles = sourceFingerprint
+    ? await recorder.time("cacheCheck", () =>
+        checkIngestCache(pp, fileName, "", {
+          sourceKey,
+          sourceFingerprint,
+        }),
+      )
+    : null
+  if (earlyCachedFiles !== null) {
+    activity.updateItem(activityId, {
+      status: "done",
+      detail: `Skipped (unchanged fingerprint) — ${earlyCachedFiles.length} files from previous ingest`,
+      filesWritten: earlyCachedFiles,
+    })
+    await recorder.flushSummary({ filesWritten: earlyCachedFiles })
+    return earlyCachedFiles
+  }
+
+  const sourceContent = await tryReadFile(sp)
+  const preparedDocument = await recorder.time("prepareDocumentForIngest", () =>
+    prepareDocumentForIngest(pp, sp, {
+      preferredPdfBackend,
+      multimodalEnabled: multimodalConfig.enabled && ["pdf", "docx", "doc", "xmind"].includes(sourceKind),
+      multimodalAvailable,
+      sourceFingerprint,
+      allowArtifactReuse: true,
+    }),
+  ).catch((err) => {
+    console.warn(`[ingest:prepare] failed for "${fileName}":`, err instanceof Error ? err.message : err)
+    return null
+  })
+  const spreadsheetMarkdown = !preparedDocument && ["xlsx", "xls", "ods"].includes(sourceKind)
+    ? await recorder.time("spreadsheetPreprocessFallback", () => preprocessFile(sp)).catch((err) => {
+        console.warn(`[ingest:spreadsheet] fallback preprocess failed for "${fileName}":`, err instanceof Error ? err.message : err)
+        return null
+      })
+    : null
+  const analysisBaseContent = preparedDocument?.analysisMarkdown ?? spreadsheetMarkdown ?? sourceContent
 
   // ── Cache check: skip re-ingest if source content hasn't changed ──
   //
@@ -341,7 +400,12 @@ async function autoIngestImpl(
   // re-running them costs only the extraction time and converges the
   // source-summary page on the current pipeline's contract regardless
   // of when the file was first ingested.
-  const cachedFiles = await checkIngestCache(pp, fileName, analysisBaseContent)
+  const cachedFiles = await recorder.time("cacheCheck", () =>
+    checkIngestCache(pp, fileName, analysisBaseContent, {
+      sourceKey,
+      sourceFingerprint,
+    }),
+  )
   console.log(`[ingest:diag] cache check for "${fileName}":`, cachedFiles === null ? "MISS (full pipeline)" : `HIT (${cachedFiles.length} cached files)`)
   if (cachedFiles !== null) {
     try {
@@ -415,6 +479,7 @@ async function autoIngestImpl(
       detail: `Skipped (unchanged) — ${cachedFiles.length} files from previous ingest`,
       filesWritten: cachedFiles,
     })
+    await recorder.flushSummary({ filesWritten: cachedFiles }).catch(() => {})
     return cachedFiles
   }
 
@@ -437,7 +502,9 @@ async function autoIngestImpl(
   // and returns [] on any error.
   activity.updateItem(activityId, { detail: "解析文档中的图片与图表..." })
   console.log(`[ingest:diag] full-pipeline branch: starting image extraction for ${sp}`)
-  const savedImages = await extractAndSaveSourceImages(pp, sp)
+  const savedImages = await recorder.time("imageExtract", () =>
+    extractAndSaveSourceImages(pp, sp),
+  )
   console.log(`[ingest:diag] full-pipeline branch: got ${savedImages.length} image(s)`)
   if (savedImages.length > 0) {
     console.log(
@@ -507,21 +574,23 @@ async function autoIngestImpl(
     const sourceSlug = fileName.replace(/\.[^.]+$/, "")
     const ourMediaPrefix = `${pp}/wiki/media/${sourceSlug}/`
     try {
-      const result = await captionMarkdownImages(pp, analysisBaseContent, captionLlm, {
-        signal,
-        // Strict filter: only caption images we know we just
-        // extracted into this source's media directory. Skips any
-        // pre-existing markdown image refs the user may have typed
-        // into the source content (e.g. for hand-authored .md
-        // sources).
-        shouldCaption: (url) => url.startsWith(ourMediaPrefix),
-        urlToAbsPath: (url) => url, // already absolute in our extraction output
-        concurrency: mmCfg.concurrency,
-        onProgress: (done, total) =>
-          activity.updateItem(activityId, {
-            detail: `Captioning images... ${done}/${total}`,
-          }),
-      })
+      const result = await recorder.time("imageCaption", () =>
+        captionMarkdownImages(pp, analysisBaseContent, captionLlm, {
+          signal,
+          // Strict filter: only caption images we know we just
+          // extracted into this source's media directory. Skips any
+          // pre-existing markdown image refs the user may have typed
+          // into the source content (e.g. for hand-authored .md
+          // sources).
+          shouldCaption: (url) => url.startsWith(ourMediaPrefix),
+          urlToAbsPath: (url) => url, // already absolute in our extraction output
+          concurrency: mmCfg.concurrency,
+          onProgress: (done, total) =>
+            activity.updateItem(activityId, {
+              detail: `Captioning images... ${done}/${total}`,
+            }),
+        }),
+      )
       enrichedSourceContent = result.enrichedMarkdown
       console.log(
         `[ingest:caption] images=${savedImages.length} fresh=${result.freshCaptions} cached=${result.cachedCaptions} failed=${result.failed}`,
@@ -559,22 +628,33 @@ async function autoIngestImpl(
 
   let analysis = ""
 
-  await streamChat(
-    llmConfig,
-    [
-      { role: "system", content: buildAnalysisPrompt(purpose, index, truncatedContent) },
-      { role: "user", content: `Analyze this source document:\n\n**File:** ${fileName}${folderContext ? `\n**Folder context:** ${folderContext}` : ""}\n\n---\n\n${truncatedContent}` },
-    ],
-    {
-      onToken: (token) => { analysis += token },
-      onDone: () => {},
-      onError: (err) => {
-        activity.updateItem(activityId, { status: "error", detail: `Analysis failed: ${err.message}` })
-      },
-    },
-    signal,
-    { temperature: 0.1 },
-  )
+  if (qualityMode === "fast") {
+    analysis = [
+      `Fast ingest analysis for ${fileName}.`,
+      "已跳过阶段一 LLM 分析，后续结构化使用规则与文档 IR 兜底。",
+      truncatedContent.slice(0, 4000),
+    ].join("\n\n")
+  } else {
+    activity.updateItem(activityId, { phase: "analysisLlm", detail: "调用 LLM 做文档理解..." })
+    await recorder.time("analysisLlm", () =>
+      streamChat(
+        llmConfig,
+        [
+          { role: "system", content: buildAnalysisPrompt(purpose, index, truncatedContent) },
+          { role: "user", content: `Analyze this source document:\n\n**File:** ${fileName}${folderContext ? `\n**Folder context:** ${folderContext}` : ""}\n\n---\n\n${truncatedContent}` },
+        ],
+        {
+          onToken: (token) => { analysis += token },
+          onDone: () => {},
+          onError: (err) => {
+            activity.updateItem(activityId, { status: "error", detail: `Analysis failed: ${err.message}` })
+          },
+        },
+        signal,
+        { temperature: 0.1 },
+      ),
+    )
+  }
 
   // A silent `return []` here would look like success to the queue
   // runner and cause the task to be filter()'d out. Throw instead so
@@ -586,19 +666,23 @@ async function autoIngestImpl(
 
   // ── Step 1.5: Scene-aware structuring ────────────────────────
   activity.updateItem(activityId, { detail: "提炼业务底稿与修订问题..." })
+  activity.updateItem(activityId, { phase: "structuring" })
   const scenePack = await ensureScenePack(pp, {
     defaultLanguage: useWikiStore.getState().outputLanguage,
   })
-  const structuredReport = await runStep15Structuring({
-    projectPath: pp,
-    sourcePath: sp,
-    sourceContent,
-    analysis,
-    scenePack,
-    llmConfig,
-    signal,
-    preparedDocumentArtifact: preparedDocument,
-  })
+  const structuredReport = await recorder.time("structuring", () =>
+    runStep15Structuring({
+      projectPath: pp,
+      sourcePath: sp,
+      sourceContent: analysisBaseContent,
+      analysis,
+      scenePack,
+      llmConfig,
+      signal,
+      preparedDocumentArtifact: preparedDocument,
+      skipLlmRefinement: qualityMode === "fast",
+    }),
+  )
   await saveAgentModeReport(pp, structuredReport)
   await saveGroundTruthDraftSnapshot(pp, structuredReport.groundTruth)
   await appendQualityDraftReport(
@@ -620,10 +704,32 @@ async function autoIngestImpl(
 
   // ── Step 1.8 + Step 2: compile plan + schema-aware wiki compile ──
   activity.updateItem(activityId, { detail: "按业务结构生成知识页..." })
-  const compileResult = await writeSceneCompile(pp, structuredReport, scenePack)
-  const strategyResult = await writeStrategyBundle(pp, structuredReport, scenePack)
-  const writtenPaths = [...compileResult.writtenPaths, ...strategyResult.writtenPaths]
-  const writeWarnings = [...structuredReport.warnings, ...compileResult.warnings]
+  activity.updateItem(activityId, { phase: "sceneCompile" })
+  const compileResult = await recorder.time("sceneCompile", () =>
+    writeSceneCompile(pp, structuredReport, scenePack, {
+      refreshTaskIndex: !options.deferPostProcessing,
+    }),
+  )
+  const strategyResult = shouldRunStrategyCompileInCore(options)
+    ? await recorder.time("strategyCompile", () => {
+        activity.updateItem(activityId, { phase: "strategyCompile", detail: "生成策略卡/行动卡..." })
+        return writeStrategyBundle(pp, structuredReport, scenePack, {
+          llmConfig,
+          signal,
+          enhanceWithLlm: qualityMode !== "fast",
+        })
+      })
+    : null
+  if (!strategyResult) {
+    activity.updateItem(activityId, {
+      phase: "strategyCompile",
+      detail: strategyCompileMode === "skip"
+        ? "策略编译已跳过，继续刷新核心 Wiki/任务卡资产..."
+        : "策略编译已延后到批量增强阶段...",
+    })
+  }
+  const writtenPaths = [...compileResult.writtenPaths, ...(strategyResult?.writtenPaths ?? [])]
+  const writeWarnings = [...structuredReport.warnings, ...compileResult.warnings, ...(strategyResult?.bundle.warnings ?? [])]
   const hardFailures: string[] = []
 
   const compiledReport: AgentModeReport = {
@@ -632,11 +738,13 @@ async function autoIngestImpl(
     compilePlan: compileResult.plan,
     compileCoverage: compileResult.compileCoverage,
     compileIr: compileResult.compileIr,
-    strategyBundle: strategyResult.bundle,
-    strategyCoverage: strategyResult.coverage,
-    confirmedStrategyCardIds: strategyResult.bundle.strategyCards
-      .filter((card) => card.status === "confirmed" || card.status === "promoted_to_skill")
-      .map((card) => card.cardId),
+    strategyBundle: strategyResult?.bundle ?? null,
+    strategyCoverage: strategyResult?.coverage ?? null,
+    confirmedStrategyCardIds: strategyResult
+      ? (strategyResult.bundle.actionCards ?? strategyResult.bundle.strategyCards)
+        .filter((card) => card.status === "confirmed" || card.status === "promoted_to_skill")
+        .map((card) => "actionCardId" in card ? card.actionCardId : card.cardId)
+      : [],
     warnings: writeWarnings,
     compileSidecar: {
       ...structuredReport.compileSidecar,
@@ -648,6 +756,12 @@ async function autoIngestImpl(
   }
   await saveAgentModeReport(pp, compiledReport)
   useAgentModeStore.getState().upsertReport(compiledReport)
+  const semanticIndex = options.deferPostProcessing
+    ? null
+    : await recorder.time("semanticIndex", () => {
+        activity.updateItem(activityId, { phase: "semanticIndex", detail: "刷新语义索引..." })
+        return rebuildSemanticUnitIndex(pp, [...useAgentModeStore.getState().reports.filter((item) => item.docId !== compiledReport.docId), compiledReport])
+      })
 
   if (writeWarnings.length > 0) {
     const summary = writeWarnings.length === 1
@@ -676,7 +790,10 @@ async function autoIngestImpl(
   }
 
   // ── Step 4: Build review items from revision cards ────────────
-  const reviewItems = buildReviewItemsFromAgentReport(compiledReport, sp)
+  const reviewItems = [
+    ...buildReviewItemsFromAgentReport(compiledReport, sp),
+    ...(semanticIndex ? buildSemanticConflictReviewItems(semanticIndex) : []),
+  ]
   if (reviewItems.length > 0) {
     useReviewStore.getState().addItems(reviewItems)
   }
@@ -691,7 +808,14 @@ async function autoIngestImpl(
   // — they represent deterministic decisions and caching them is
   // safe.
   if (writtenPaths.length > 0 && hardFailures.length === 0) {
-    await saveIngestCache(pp, fileName, sourceContent, writtenPaths)
+    await saveIngestCache(pp, fileName, analysisBaseContent, writtenPaths, {
+      sourceKey,
+      sourceFingerprint,
+      artifactManifestPath: preparedDocument?.artifactManifest
+        ? `${preparedDocument.artifactManifest.outputDir}/manifest.json`
+        : null,
+      completedStages: options.deferPostProcessing ? ["core"] : ["core", "postProcessing"],
+    })
   } else if (hardFailures.length > 0) {
     console.warn(
       `[ingest] Skipping cache save for "${fileName}" — ${hardFailures.length} block(s) failed to write: ${hardFailures.join(", ")}`,
@@ -700,24 +824,33 @@ async function autoIngestImpl(
 
   // ── Step 6: Generate embeddings (if enabled) ───────────────
   const embCfg = useWikiStore.getState().embeddingConfig
-  if (embCfg.enabled && embCfg.model && writtenPaths.length > 0) {
+  if (!options.deferPostProcessing && embCfg.enabled && embCfg.model && writtenPaths.length > 0) {
     try {
-      const { embedPage } = await import("@/lib/embedding")
-      for (const wpath of writtenPaths) {
-        const pageId = wpath.split("/").pop()?.replace(/\.md$/, "") ?? ""
-        if (!pageId || ["index", "log", "overview"].includes(pageId)) continue
-        try {
-          const content = await readFile(`${pp}/${wpath}`)
-          const titleMatch = content.match(/^---\n[\s\S]*?^title:\s*["']?(.+?)["']?\s*$/m)
-          const title = titleMatch ? titleMatch[1].trim() : pageId
-          await embedPage(pp, pageId, title, content, embCfg)
-        } catch {
-          // non-critical
+      await recorder.time("embeddings", async () => {
+        const { embedPage } = await import("@/lib/embedding")
+        for (const wpath of writtenPaths) {
+          const pageId = wpath.split("/").pop()?.replace(/\.md$/, "") ?? ""
+          if (!pageId || ["index", "log", "overview"].includes(pageId)) continue
+          try {
+            const content = await readFile(`${pp}/${wpath}`)
+            const titleMatch = content.match(/^---\n[\s\S]*?^title:\s*["']?(.+?)["']?\s*$/m)
+            const title = titleMatch ? titleMatch[1].trim() : pageId
+            await embedPage(pp, pageId, title, content, embCfg)
+          } catch {
+            // non-critical
+          }
         }
-      }
+      })
     } catch {
       // embedding module not available
     }
+  }
+
+  if (!options.deferPostProcessing) {
+    activity.updateItem(activityId, { phase: "qualityReport", detail: "写入项目质量报告..." })
+    await recorder.time("qualityReport", () =>
+      writeProjectQualityReport(pp),
+    ).catch(() => {})
   }
 
   const detail = writtenPaths.length > 0
@@ -729,6 +862,7 @@ async function autoIngestImpl(
     detail,
     filesWritten: writtenPaths,
   })
+  await recorder.flushSummary({ filesWritten: writtenPaths, warnings: writeWarnings }).catch(() => {})
 
   return writtenPaths
 }

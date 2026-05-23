@@ -1,6 +1,7 @@
 use std::fs;
 use std::io::Read as IoRead;
 use std::path::Path;
+use std::time::UNIX_EPOCH;
 
 use calamine::{Reader, open_workbook_auto, Data};
 
@@ -8,7 +9,7 @@ use crate::panic_guard::run_guarded;
 use crate::types::wiki::FileNode;
 
 /// Known binary formats that need special extraction
-const OFFICE_EXTS: &[&str] = &["docx", "pptx", "xlsx", "odt", "ods", "odp"];
+const OFFICE_EXTS: &[&str] = &["docx", "pptx", "xlsx", "xls", "odt", "ods", "odp"];
 const IMAGE_EXTS: &[&str] = &[
     "png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "tiff", "tif", "avif", "heic", "heif", "svg",
 ];
@@ -16,7 +17,7 @@ const MEDIA_EXTS: &[&str] = &[
     "mp4", "webm", "mov", "avi", "mkv", "flv", "wmv", "m4v",
     "mp3", "wav", "ogg", "flac", "aac", "m4a", "wma",
 ];
-const LEGACY_DOC_EXTS: &[&str] = &["doc", "xls", "ppt", "pages", "numbers", "key", "epub"];
+const LEGACY_DOC_EXTS: &[&str] = &["doc", "ppt", "pages", "numbers", "key", "epub"];
 
 #[tauri::command]
 pub async fn read_file(path: String) -> Result<String, String> {
@@ -105,6 +106,38 @@ pub async fn preprocess_file(path: String) -> Result<String, String> {
     })
     .await
     .map_err(|e| format!("preprocess_file blocking task join error: {e}"))?
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileFingerprint {
+    pub source_path: String,
+    pub size_bytes: u64,
+    pub modified_ms: u128,
+}
+
+#[tauri::command]
+pub async fn file_fingerprint(path: String) -> Result<FileFingerprint, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        run_guarded("file_fingerprint", || {
+            let metadata = fs::metadata(&path)
+                .map_err(|e| format!("Failed to stat '{}': {}", path, e))?;
+            let modified = metadata
+                .modified()
+                .map_err(|e| format!("Failed to read modified time for '{}': {}", path, e))?;
+            let modified_ms = modified
+                .duration_since(UNIX_EPOCH)
+                .map_err(|e| format!("Invalid modified time for '{}': {}", path, e))?
+                .as_millis();
+            Ok(FileFingerprint {
+                source_path: path.replace('\\', "/"),
+                size_bytes: metadata.len(),
+                modified_ms,
+            })
+        })
+    })
+    .await
+    .map_err(|e| format!("file_fingerprint blocking task join error: {e}"))?
 }
 
 fn cache_path_for(original: &Path) -> std::path::PathBuf {
@@ -1320,6 +1353,29 @@ mod tests {
         let mut f = fs::File::create(&path).unwrap();
         f.write_all(bytes).unwrap();
         path.to_string_lossy().to_string()
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn file_fingerprint_reports_size_and_modified_time_for_unicode_path() {
+        let dir = std::env::temp_dir().join(format!(
+            "fingerprint-测试-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("表格.xlsx");
+        fs::write(&path, b"abc").unwrap();
+
+        let result = file_fingerprint(path.to_string_lossy().to_string())
+            .await
+            .unwrap();
+
+        assert_eq!(result.size_bytes, 3);
+        assert!(result.modified_ms > 0);
+        assert!(result.source_path.contains("表格.xlsx"));
+        assert!(!result.source_path.contains('\\'));
     }
 
     /// Verify read_file does NOT crash the test process on malformed PDFs.

@@ -155,7 +155,7 @@ export function buildImageMarkdownSection(
 
   for (const key of ordered) {
     lines.push(`### ${key}`, "")
-    for (const img of byPage.get(key) ?? []) {
+    for (const [index, img] of (byPage.get(key) ?? []).entries()) {
       // Caption lookup by SHA-256 — same key the caption pipeline
       // uses to dedupe across documents. Falling back to empty alt
       // text if no caption is available for this image (caption
@@ -164,7 +164,10 @@ export function buildImageMarkdownSection(
       // — the inline LLM-generated text might cite the image by
       // page number anyway.
       const caption = captionsBySha?.get(img.sha256)
-      const alt = caption ? sanitize(caption) : ""
+      const fallback = img.page == null
+        ? `文档图片 ${index + 1}，待补充视觉说明`
+        : `第 ${img.page} 页图片 ${index + 1}，待补充视觉说明`
+      const alt = caption ? sanitize(caption) : fallback
       lines.push(`![${alt}](${img.relPath})`)
     }
     lines.push("")

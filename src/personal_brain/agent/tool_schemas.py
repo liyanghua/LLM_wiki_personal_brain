@@ -12,6 +12,18 @@ class SearchWikiInput(BaseModel):
     query: str
 
 
+class SearchTasksInput(BaseModel):
+    query: str = ""
+    role: str | None = None
+    start_date: str | None = None
+    end_date: str | None = None
+    task_module: str | None = None
+    product_id: str | None = None
+    task_status: str | None = None
+    include_needs_review: bool = True
+    limit: int = 12
+
+
 class ReadPageInput(BaseModel):
     page_id: str
 

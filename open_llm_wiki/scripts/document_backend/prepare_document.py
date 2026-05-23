@@ -5,6 +5,7 @@ import html
 import re
 import shutil
 import sys
+import tempfile
 import zipfile
 from pathlib import Path
 from typing import Any
@@ -180,6 +181,263 @@ def build_normalized_bundle(source_kind: str, source_path: str, analysis_markdow
         "missingFieldKeys": [],
         "mindmapSummary": [" > ".join(node.get("nodePath", [])) for node in mindmap_nodes[:10]],
         "warnings": warnings,
+    }
+
+
+def escape_markdown_cell(value: str) -> str:
+    return value.replace("|", "\\|").replace("\n", "<br>").strip()
+
+
+def column_name_to_index(cell_ref: str) -> int:
+    letters = "".join(ch for ch in cell_ref.upper() if "A" <= ch <= "Z")
+    index = 0
+    for ch in letters:
+        index = index * 26 + (ord(ch) - ord("A") + 1)
+    return max(index - 1, 0)
+
+
+def read_shared_strings(archive: zipfile.ZipFile) -> list[str]:
+    try:
+        root = ET.fromstring(archive.read("xl/sharedStrings.xml"))
+    except Exception:
+        return []
+    strings: list[str] = []
+    for si in root.findall(".//{*}si"):
+        parts = [node.text or "" for node in si.findall(".//{*}t")]
+        strings.append("".join(parts))
+    return strings
+
+
+def read_workbook_sheets(archive: zipfile.ZipFile) -> list[tuple[str, str]]:
+    rel_lookup: dict[str, str] = {}
+    try:
+        rel_root = ET.fromstring(archive.read("xl/_rels/workbook.xml.rels"))
+        for rel in rel_root.findall("{*}Relationship"):
+            rel_id = rel.attrib.get("Id", "")
+            target = rel.attrib.get("Target", "")
+            if rel_id and target:
+                rel_lookup[rel_id] = target
+    except Exception:
+        pass
+
+    sheets: list[tuple[str, str]] = []
+    root = ET.fromstring(archive.read("xl/workbook.xml"))
+    for sheet in root.findall(".//{*}sheet"):
+        name = sheet.attrib.get("name", "Sheet")
+        rel_id = ""
+        for key, value in sheet.attrib.items():
+            if key.endswith("}id") or key == "r:id":
+                rel_id = value
+                break
+        target = rel_lookup.get(rel_id, "")
+        if not target:
+            continue
+        sheet_path = target if target.startswith("xl/") else f"xl/{target.lstrip('/')}"
+        sheet_path = str(Path(sheet_path)).replace("\\", "/")
+        sheets.append((name, sheet_path))
+    if not sheets:
+        for name in archive.namelist():
+            if name.startswith("xl/worksheets/") and name.endswith(".xml"):
+                sheets.append((Path(name).stem, name))
+    return sheets
+
+
+def cell_value(cell: ET.Element, shared_strings: list[str]) -> str:
+    cell_type = cell.attrib.get("t", "")
+    if cell_type == "inlineStr":
+        return "".join(node.text or "" for node in cell.findall(".//{*}t")).strip()
+    value_node = cell.find("{*}v")
+    formula_node = cell.find("{*}f")
+    raw = (value_node.text if value_node is not None else "") or ""
+    if cell_type == "s":
+        try:
+            return shared_strings[int(raw)].strip()
+        except Exception:
+            return raw.strip()
+    if cell_type == "str":
+        return raw.strip()
+    if not raw and formula_node is not None:
+        return f"={formula_node.text or ''}".strip()
+    return raw.strip()
+
+
+def read_sheet_rows(archive: zipfile.ZipFile, sheet_path: str, shared_strings: list[str]) -> list[list[str]]:
+    root = ET.fromstring(archive.read(sheet_path))
+    rows: list[list[str]] = []
+    max_cols = 0
+    for row in root.findall(".//{*}sheetData/{*}row"):
+        values: list[str] = []
+        for cell in row.findall("{*}c"):
+            ref = cell.attrib.get("r", "")
+            col_index = column_name_to_index(ref) if ref else len(values)
+            while len(values) < col_index:
+                values.append("")
+            values.append(cell_value(cell, shared_strings))
+        while values and values[-1] == "":
+            values.pop()
+        if values:
+            max_cols = max(max_cols, len(values))
+            rows.append(values)
+    return [row + [""] * (max_cols - len(row)) for row in rows]
+
+
+def rows_to_markdown(rows: list[list[str]]) -> str:
+    if not rows:
+        return ""
+    width = max(len(row) for row in rows)
+    normalized = [row + [""] * (width - len(row)) for row in rows]
+    lines = ["| " + " | ".join(escape_markdown_cell(cell) for cell in normalized[0]) + " |"]
+    lines.append("| " + " | ".join(["---"] * width) + " |")
+    for row in normalized[1:]:
+        lines.append("| " + " | ".join(escape_markdown_cell(cell) for cell in row) + " |")
+    return "\n".join(lines)
+
+
+def parse_xlsx(source_path: Path, source_kind: str) -> dict[str, Any]:
+    warnings: list[str] = []
+    blocks: list[dict[str, Any]] = []
+    normalized_tables: list[dict[str, Any]] = []
+    analysis_lines = [f"# {source_path.stem}", ""]
+    shared_strings: list[str] = []
+    with zipfile.ZipFile(source_path) as archive:
+        shared_strings = read_shared_strings(archive)
+        sheets = read_workbook_sheets(archive)
+        if not sheets:
+            warnings.append("未在工作簿中发现可解析的 sheet。")
+        for sheet_index, (sheet_name, sheet_path) in enumerate(sheets, start=1):
+            if sheet_path not in archive.namelist():
+                warnings.append(f"工作表 {sheet_name} 缺少 XML 文件：{sheet_path}")
+                continue
+            rows = read_sheet_rows(archive, sheet_path, shared_strings)
+            if not rows:
+                continue
+            markdown = rows_to_markdown(rows)
+            analysis_lines.extend([f"## {sheet_name}", "", markdown, ""])
+            block_id = f"{slugify(source_path.stem)}-sheet{sheet_index:03d}"
+            headers = rows[0]
+            data_rows = rows[1:]
+            range_label = f"A1:{chr(ord('A') + min(max(len(headers) - 1, 0), 25))}{len(rows)}"
+            blocks.append({
+                "blockId": block_id,
+                "blockType": "table",
+                "textContent": markdown,
+                "parentBlockId": None,
+                "childBlockIds": [],
+                "sourceRefs": [str(source_path)],
+                "headingPath": [sheet_name],
+                "level": None,
+                "lineStart": 1,
+                "lineEnd": len(rows),
+                "page": None,
+                "readingOrder": len(blocks),
+                "blockRole": "spreadsheet_sheet",
+                "ocrUsed": False,
+                "sourceAnchorId": block_id,
+                "assetPath": None,
+                "approximateAnchor": False,
+                "nodePath": [],
+                "evidenceKind": "table",
+            })
+            normalized_tables.append({
+                "tableId": block_id,
+                "headingPath": [sheet_name],
+                "headers": headers,
+                "rows": data_rows,
+                "sourceAnchorId": f"{source_path}#sheet={sheet_name}&range={range_label}",
+            })
+    analysis_markdown = "\n".join(analysis_lines).strip() + "\n"
+    normalized = build_normalized_bundle(source_kind, str(source_path), analysis_markdown, blocks, [], [], [], warnings)
+    normalized["tables"] = normalized_tables
+    return {
+        "backend": "spreadsheet_core",
+        "status": "ready" if normalized_tables else "fallback",
+        "detail": "已解析电子表格工作簿、Sheet 与表格行列结构。" if normalized_tables else "电子表格未解析出有效表格，已降级为空结构。",
+        "degraded": bool(warnings) or not bool(normalized_tables),
+        "analysis_markdown": analysis_markdown,
+        "blocks": blocks,
+        "normalized": normalized,
+        "images": [],
+        "warnings": warnings,
+        "available_enhancers": ["xlsx-zip-xml"],
+        "missing_enhancers": [] if source_kind == "xlsx" else ["soffice-spreadsheet-conversion"],
+        "page_count": None,
+        "ocr_used": False,
+    }
+
+
+def convert_spreadsheet_to_xlsx(source_path: Path, output_dir: Path) -> Path | None:
+    binary = shutil.which("soffice") or shutil.which("libreoffice")
+    if not binary:
+        return None
+    with tempfile.TemporaryDirectory(prefix="llmwiki-spreadsheet-") as tmp:
+        tmp_path = Path(tmp)
+        result = shutil.copy2(source_path, tmp_path / source_path.name)
+        import subprocess
+        completed = subprocess.run(
+            [binary, "--headless", "--convert-to", "xlsx", "--outdir", str(output_dir), str(result)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=60,
+        )
+        if completed.returncode != 0:
+            return None
+    converted = output_dir / f"{source_path.stem}.xlsx"
+    return converted if converted.exists() else None
+
+
+def parse_spreadsheet(source_path: Path, output_dir: Path, source_kind: str) -> dict[str, Any]:
+    if source_kind == "xlsx":
+        return parse_xlsx(source_path, source_kind)
+    converted = convert_spreadsheet_to_xlsx(source_path, output_dir)
+    if converted:
+        parsed = parse_xlsx(converted, source_kind)
+        parsed["warnings"].append(f"原始 {source_kind.upper()} 已转换为 XLSX 后解析。")
+        parsed["degraded"] = True
+        return parsed
+    content = (
+        f"# {source_path.stem}\n\n"
+        f"> 暂未检测到可用的 LibreOffice/soffice，无法结构化解析 {source_kind.upper()} 工作簿。"
+        " 请安装转换器或另存为 XLSX 后重新导入。\n"
+    )
+    block_id = f"{slugify(source_path.stem)}-spreadsheet-unparsed"
+    blocks = [{
+        "blockId": block_id,
+        "blockType": "paragraph",
+        "textContent": content.strip(),
+        "parentBlockId": None,
+        "childBlockIds": [],
+        "sourceRefs": [str(source_path)],
+        "headingPath": [],
+        "level": None,
+        "lineStart": 1,
+        "lineEnd": 1,
+        "page": None,
+        "readingOrder": 0,
+        "blockRole": "spreadsheet_parse_warning",
+        "ocrUsed": False,
+        "sourceAnchorId": block_id,
+        "assetPath": None,
+        "approximateAnchor": False,
+        "nodePath": [],
+        "evidenceKind": "text",
+    }]
+    warnings = [f"{source_kind.upper()} 解析需要 LibreOffice/soffice 转换为 XLSX，当前环境未检测到转换器。"]
+    normalized = build_normalized_bundle(source_kind, str(source_path), content, blocks, [], [], [], warnings)
+    return {
+        "backend": "spreadsheet_core",
+        "status": "fallback",
+        "detail": warnings[0],
+        "degraded": True,
+        "analysis_markdown": content,
+        "blocks": blocks,
+        "normalized": normalized,
+        "images": [],
+        "warnings": warnings,
+        "available_enhancers": [],
+        "missing_enhancers": ["soffice-spreadsheet-conversion"],
+        "page_count": None,
+        "ocr_used": False,
     }
 
 
@@ -694,6 +952,8 @@ def main() -> int:
         parsed = parse_docx(source_path, output_dir, args.multimodal_enabled)
     elif source_kind == "xmind":
         parsed = parse_xmind(source_path, output_dir)
+    elif source_kind in ("xlsx", "xls", "ods"):
+        parsed = parse_spreadsheet(source_path, output_dir, source_kind)
     else:
         parsed = parse_generic(source_path, source_kind)
 

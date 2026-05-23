@@ -5,6 +5,7 @@
   },
   "nav": {
     "agentMode": "业务修订",
+    "chat": "知识问答",
     "strategy": "策略与技能",
     "research": "深度研究",
     "wiki": "知识页",

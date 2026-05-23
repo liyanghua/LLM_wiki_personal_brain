@@ -8,6 +8,17 @@ import { useActivityStore, type ActivityItem } from "@/stores/activity-store"
 import { useWikiStore } from "@/stores/wiki-store"
 import { normalizePath, getFileName, isAbsolutePath } from "@/lib/path-utils"
 import { getQueue, getQueueSummary, retryTask, cancelTask, cancelAllTasks, type IngestTask } from "@/lib/ingest-queue"
+import {
+  formatDurationMs,
+  formatIngestPhaseLabel,
+  loadLatestIngestTimingSummary,
+  type IngestTimingSummary,
+} from "@/lib/ingest-timing"
+import {
+  formatProjectQualityTaskSummary,
+  loadProjectQualityReport,
+  type ProjectQualityReport,
+} from "@/lib/project-quality-report"
 
 const FILE_TYPE_ICONS: Record<string, typeof FileText> = {
   sources: BookOpen,
@@ -35,6 +46,9 @@ export function ActivityPanel() {
   const project = useWikiStore((s) => s.project)
   const [expanded, setExpanded] = useState(false)
   const [queueTasks, setQueueTasks] = useState<IngestTask[]>([])
+  const [nowMs, setNowMs] = useState(Date.now())
+  const [timingSummary, setTimingSummary] = useState<IngestTimingSummary | null>(null)
+  const [qualityReport, setQualityReport] = useState<ProjectQualityReport | null>(null)
   const prevRunningRef = useRef(0)
 
   const runningCount = items.filter((i) => i.status === "running").length
@@ -44,9 +58,35 @@ export function ActivityPanel() {
   useEffect(() => {
     const interval = setInterval(() => {
       setQueueTasks([...getQueue()])
+      setNowMs(Date.now())
     }, 1000)
     return () => clearInterval(interval)
   }, [])
+
+  useEffect(() => {
+    if (!project) {
+      setTimingSummary(null)
+      setQualityReport(null)
+      return
+    }
+    const projectPath = project.path
+    let cancelled = false
+    async function refreshTelemetry() {
+      const [timing, quality] = await Promise.all([
+        loadLatestIngestTimingSummary(projectPath).catch(() => null),
+        loadProjectQualityReport(projectPath).catch(() => null),
+      ])
+      if (cancelled) return
+      setTimingSummary(timing)
+      setQualityReport(quality)
+    }
+    void refreshTelemetry()
+    const interval = setInterval(() => void refreshTelemetry(), 5000)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [project])
 
   const queueSummary = getQueueSummary()
   const hasQueue = queueSummary.total > 0
@@ -92,16 +132,18 @@ export function ActivityPanel() {
 
   if (!hasItems && !hasQueue) return null
 
-  const latestItem = items[0]
+  const latestItem = items.find((item) => item.status === "running") ?? items[0]
+  const latestPhase = latestItem?.phase ? formatIngestPhaseLabel(latestItem.phase) : null
 
   // Build status text
   let statusText = ""
   if (queueSummary.processing > 0 || queueSummary.pending > 0) {
     const done = queueSummary.total - queueSummary.pending - queueSummary.processing
-    statusText = `Queue: ${done}/${queueSummary.total}`
+    statusText = `Ingest: ${done}/${queueSummary.total}`
+    if (latestPhase) statusText += ` · ${latestPhase}`
     if (queueSummary.failed > 0) statusText += ` (${queueSummary.failed} failed)`
   } else if (runningCount > 0) {
-    statusText = `Processing: ${latestItem?.title ?? "..."}`
+    statusText = `Processing: ${latestPhase ?? latestItem?.title ?? "..."}`
   } else if (queueSummary.failed > 0) {
     statusText = `${queueSummary.failed} failed task${queueSummary.failed > 1 ? "s" : ""}`
   } else {
@@ -160,6 +202,13 @@ export function ActivityPanel() {
             </div>
           )}
 
+          <IngestObservabilitySummary
+            latestItem={latestItem}
+            nowMs={nowMs}
+            timingSummary={timingSummary}
+            qualityReport={qualityReport}
+          />
+
           {/* Queue tasks */}
           {queueTasks.filter((t) => t.status === "processing").map((task) => (
             <QueueRow key={task.id} task={task} onRetry={handleRetry} onCancel={handleCancel} />
@@ -199,8 +248,84 @@ export function ActivityPanel() {
   )
 }
 
+function IngestObservabilitySummary({
+  latestItem,
+  nowMs,
+  timingSummary,
+  qualityReport,
+}: {
+  latestItem?: ActivityItem
+  nowMs: number
+  timingSummary: IngestTimingSummary | null
+  qualityReport: ProjectQualityReport | null
+}) {
+  const elapsedMs = latestItem?.status === "running"
+    ? nowMs - (latestItem.startedAtMs ?? latestItem.createdAt)
+    : 0
+  const phase = latestItem?.phase ? formatIngestPhaseLabel(latestItem.phase) : null
+  const phases = timingSummary?.phases.slice(-6) ?? []
+  return (
+    <div className="border-b border-border/50 bg-background/60 px-3 py-2 text-xs">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="min-w-0">
+          <div className="font-medium text-foreground">编译可观测面板</div>
+          <div className="mt-0.5 truncate text-[10px] text-muted-foreground">
+            {latestItem?.status === "running"
+              ? `${latestItem.title} · ${phase ?? "处理中"} · 已耗时 ${formatDurationMs(elapsedMs)}`
+              : timingSummary
+                ? `最近批次 ${timingSummary.batchId ?? timingSummary.runId ?? ""} · 核心 ${formatDurationMs(timingSummary.coreDurationMs)} · 增强 ${formatDurationMs(timingSummary.enrichmentDurationMs)}`
+                : "暂无耗时基线，下一次 Ingest 会自动记录。"}
+          </div>
+        </div>
+        {latestItem?.metrics && (
+          <div className="rounded-md bg-muted px-2 py-1 text-[10px] text-muted-foreground">
+            任务 {latestItem.metrics.taskCount ?? 0} · ready {latestItem.metrics.ready ?? 0} · review {latestItem.metrics.needsReview ?? 0}
+          </div>
+        )}
+      </div>
+
+      <div className="mt-2 grid gap-2 md:grid-cols-2">
+        <div className="rounded-lg border border-border/60 bg-muted/20 p-2">
+          <div className="mb-1 text-[10px] font-medium text-muted-foreground">阶段耗时</div>
+          {phases.length > 0 ? (
+            <div className="flex flex-wrap gap-1">
+              {phases.map((phaseItem) => (
+                <span
+                  key={phaseItem.phase}
+                  className={`rounded px-1.5 py-0.5 text-[10px] ${
+                    phaseItem.phase === "strategyCompile"
+                      ? "bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                      : "bg-background text-muted-foreground"
+                  }`}
+                >
+                  {phaseItem.label}: {formatDurationMs(phaseItem.durationMs)}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <div className="text-[10px] text-muted-foreground">暂无阶段耗时。</div>
+          )}
+        </div>
+        <div className="rounded-lg border border-border/60 bg-muted/20 p-2">
+          <div className="mb-1 text-[10px] font-medium text-muted-foreground">任务卡质量</div>
+          <div className="text-[10px] leading-5 text-muted-foreground">
+            {qualityReport
+              ? formatProjectQualityTaskSummary(qualityReport)
+              : "暂无质量报告；核心抽取完成后会写入 .llm-wiki/quality-report.json。"}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function QueueRow({ task, onRetry, onCancel }: { task: IngestTask; onRetry: (id: string) => void; onCancel: (id: string) => void }) {
   const fileName = getFileName(task.sourcePath)
+  const strategyLabel = task.strategyCompileMode === "skip"
+    ? "核心抽取"
+    : task.strategyCompileMode === "deferred"
+      ? "完整增强"
+      : null
 
   return (
     <div className="px-3 py-2 text-xs border-b border-border/50">
@@ -214,6 +339,11 @@ function QueueRow({ task, onRetry, onCancel }: { task: IngestTask; onRetry: (id:
           <div className="font-medium truncate">{fileName}</div>
           {task.folderContext && (
             <div className="text-[10px] text-muted-foreground/70 truncate">{task.folderContext}</div>
+          )}
+          {strategyLabel && (
+            <div className="mt-0.5 text-[10px] text-muted-foreground/70">
+              {strategyLabel} · strategyCompile {task.strategyCompileMode === "skip" ? "skipped" : "deferred"}
+            </div>
           )}
           {task.status === "failed" && task.error && (
             <div className="text-[10px] text-destructive mt-0.5 truncate">{task.error}</div>

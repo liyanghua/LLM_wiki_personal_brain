@@ -9,26 +9,33 @@ import { readFile, listDirectory } from "@/commands/fs"
 import type { FileNode } from "@/types/wiki"
 import { normalizePath } from "@/lib/path-utils"
 import { cascadeDeleteWikiPagesWithRefs } from "@/lib/wiki-page-delete"
-
-interface WikiPageInfo {
-  path: string
-  title: string
-  type: string
-  tags: string[]
-  origin?: string
-}
+import { parseKnowledgePageInfo, type WikiPageInfo } from "@/lib/knowledge-tree-classification"
 
 const TYPE_CONFIG: Record<string, { icon: typeof FileText; label: string; color: string; order: number }> = {
   overview:    { icon: Layout,      label: "全局概览",     color: "text-yellow-500", order: 0 },
-  entity:      { icon: Users,       label: "业务对象",     color: "text-blue-500",   order: 1 },
-  concept:     { icon: Lightbulb,   label: "业务概念",     color: "text-purple-500", order: 2 },
-  source:      { icon: BookOpen,    label: "来源摘要",     color: "text-orange-500", order: 3 },
-  synthesis:   { icon: GitMerge,    label: "综合结论",     color: "text-red-500",    order: 4 },
-  comparison:  { icon: BarChart3,   label: "对比分析",     color: "text-emerald-500",order: 5 },
-  query:       { icon: HelpCircle,  label: "待解问题",     color: "text-green-500",  order: 6 },
+  role:        { icon: Users,       label: "角色与职责",   color: "text-blue-500",   order: 1 },
+  entity:      { icon: Users,       label: "业务对象",     color: "text-blue-500",   order: 2 },
+  concept:     { icon: Lightbulb,   label: "业务概念",     color: "text-purple-500", order: 3 },
+  "task-mechanism": { icon: GitMerge, label: "任务生成机制", color: "text-red-500", order: 4 },
+  meeting:     { icon: BookOpen,    label: "会议与复盘",   color: "text-cyan-500",   order: 5 },
+  task:        { icon: HelpCircle,  label: "可执行任务卡", color: "text-green-500",  order: 6 },
+  quality:     { icon: BarChart3,   label: "质量与验收",   color: "text-emerald-500",order: 7 },
+  collaboration: { icon: GitMerge,  label: "协同关系",     color: "text-indigo-500", order: 8 },
+  review:      { icon: FileText,    label: "复盘沉淀",     color: "text-amber-500",  order: 9 },
+  business_index: { icon: Layout,   label: "业务总览",     color: "text-yellow-600", order: 10 },
+  business_process: { icon: GitMerge, label: "经营主链路", color: "text-red-500", order: 11 },
+  business_judgements: { icon: Lightbulb, label: "关键判断", color: "text-purple-500", order: 12 },
+  business_evidence: { icon: BookOpen, label: "证据与案例", color: "text-orange-500", order: 13 },
+  business_boundaries: { icon: HelpCircle, label: "边界与例外", color: "text-slate-500", order: 14 },
+  business_strategy: { icon: BarChart3, label: "策略动作卡", color: "text-emerald-500", order: 15 },
+  business_knowledge: { icon: FileText, label: "业务编译页", color: "text-muted-foreground", order: 16 },
+  source:      { icon: BookOpen,    label: "来源摘要",     color: "text-orange-500", order: 30 },
+  synthesis:   { icon: GitMerge,    label: "综合结论",     color: "text-red-500",    order: 31 },
+  comparison:  { icon: BarChart3,   label: "对比分析",     color: "text-emerald-500",order: 32 },
+  query:       { icon: HelpCircle,  label: "待解问题",     color: "text-green-500",  order: 33 },
 }
 
-const DEFAULT_CONFIG = { icon: FileText, label: "其他页面", color: "text-muted-foreground", order: 99 }
+const DEFAULT_CONFIG = { icon: FileText, label: "待分类知识页", color: "text-muted-foreground", order: 99 }
 
 export function KnowledgeTree() {
   const project = useWikiStore((s) => s.project)
@@ -57,7 +64,7 @@ export function KnowledgeTree() {
         if (file.name === "index.md" || file.name === "log.md") continue
         try {
           const content = await readFile(file.path)
-          const info = parsePageInfo(file.path, file.name, content)
+          const info = parseKnowledgePageInfo(file.path, file.name, content)
           pageInfos.push(info)
         } catch {
           pageInfos.push({
@@ -288,51 +295,6 @@ function RawSourcesSection() {
       )}
     </div>
   )
-}
-
-function parsePageInfo(path: string, fileName: string, content: string): WikiPageInfo {
-  let type = "other"
-  let title = fileName.replace(".md", "").replace(/-/g, " ")
-  const tags: string[] = []
-  let origin: string | undefined
-
-  // Parse YAML frontmatter
-  const fmMatch = content.match(/^---\n([\s\S]*?)\n---/)
-  if (fmMatch) {
-    const fm = fmMatch[1]
-    const typeMatch = fm.match(/^type:\s*(.+)$/m)
-    if (typeMatch) type = typeMatch[1].trim().toLowerCase()
-
-    const titleMatch = fm.match(/^title:\s*["']?(.+?)["']?\s*$/m)
-    if (titleMatch) title = titleMatch[1].trim()
-
-    const tagsMatch = fm.match(/^tags:\s*\[(.+?)\]/m)
-    if (tagsMatch) {
-      tags.push(...tagsMatch[1].split(",").map((t) => t.trim().replace(/["']/g, "")))
-    }
-
-    const originMatch = fm.match(/^origin:\s*(.+)$/m)
-    if (originMatch) origin = originMatch[1].trim()
-  }
-
-  // Fallback: try first heading if no frontmatter title
-  if (title === fileName.replace(".md", "").replace(/-/g, " ")) {
-    const headingMatch = content.match(/^#\s+(.+)$/m)
-    if (headingMatch) title = headingMatch[1].trim()
-  }
-
-  // Fallback: infer type from path
-  if (type === "other") {
-    if (path.includes("/entities/")) type = "entity"
-    else if (path.includes("/concepts/")) type = "concept"
-    else if (path.includes("/sources/")) type = "source"
-    else if (path.includes("/queries/")) type = "query"
-    else if (path.includes("/comparisons/")) type = "comparison"
-    else if (path.includes("/synthesis/")) type = "synthesis"
-    else if (fileName === "overview.md") type = "overview"
-  }
-
-  return { path, title, type, tags, origin }
 }
 
 /**

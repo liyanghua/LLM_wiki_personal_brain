@@ -31,6 +31,16 @@ export async function preprocessFile(path: string): Promise<string> {
   return invoke<string>("preprocess_file", { path })
 }
 
+export interface FileFingerprintStat {
+  sourcePath: string
+  sizeBytes: number
+  modifiedMs: number
+}
+
+export async function fileFingerprint(path: string): Promise<FileFingerprintStat> {
+  return invoke<FileFingerprintStat>("file_fingerprint", { path })
+}
+
 export async function deleteFile(path: string): Promise<void> {
   return invoke("delete_file", { path })
 }
@@ -100,13 +110,14 @@ export interface PdfBackendArtifactResult {
 }
 
 export interface DocumentBackendArtifactResult {
-  sourceKind: "pdf" | "docx" | "doc" | "xmind" | "generic"
+  sourceKind: "pdf" | "docx" | "doc" | "xmind" | "xlsx" | "xls" | "ods" | "generic"
   backend:
     | "pdfium"
     | "opendataloader"
     | "docx_core"
     | "docx_enhanced"
     | "xmind_core"
+    | "spreadsheet_core"
     | "soffice_docx_bridge"
     | "generic"
   status: "ready" | "fallback" | "error" | "unavailable"
@@ -187,9 +198,14 @@ export interface StrategySkillCandidateManifestResult {
   sceneId: string
   linkedDocIds: string[]
   originStrategyCardIds: string[]
+  originActionCardIds?: string[]
   wikiRefs: string[]
   sourceRefs: string[]
   validationCriteria: string[]
+  requiredInputs?: string[]
+  outputArtifact?: string
+  actionSteps?: string[]
+  schemaVersion?: number
   promotionState: string
   generatedAt: string
 }
@@ -205,6 +221,78 @@ export interface ApprovedSkillSpecResult {
   sourceRefs: string[]
   inputSchema: Record<string, unknown>
   outputSchema: Record<string, unknown>
+  executionSpec?: Record<string, unknown>
+}
+
+export type ExecutionPhaseStatus = "pending" | "running" | "completed" | "degraded" | "failed" | "skipped"
+
+export interface ExecutionTimelineEntryResult {
+  phase: string
+  status: ExecutionPhaseStatus
+  title: string
+  detail: string
+  startedAt: string
+  endedAt: string
+  durationMs: number
+  severity: "info" | "warning" | "error"
+  data?: Record<string, unknown>
+}
+
+export interface AgentRunDegradationReasonResult {
+  code: string
+  title: string
+  detail: string
+  recoverable: boolean
+  recommendedAction: string
+}
+
+export type SkillStepStatus = "completed" | "degraded" | "failed" | "skipped"
+export type SkillStepTaskType =
+  | "read_file"
+  | "local_tool"
+  | "data_extract"
+  | "data_transform"
+  | "human_review"
+  | "llm_reasoning"
+
+export interface SkillStepTaskResult {
+  stepIndex: number
+  stepTitle: string
+  taskType: SkillStepTaskType
+  toolName?: string
+  contextRefs: string[]
+  inputKeys: string[]
+  dataNeeds: string[]
+  expectedStepOutput: string
+}
+
+export interface SkillExecutionPlanResult {
+  planId: string
+  executionMode: string
+  summary: string
+  stepTasks: SkillStepTaskResult[]
+  requiredContextRefs: string[]
+  expectedOutput: string
+  humanReviewPoints: string[]
+}
+
+export interface SkillStepExecutionResult {
+  stepIndex: number
+  stepTitle: string
+  taskType?: SkillStepTaskType | string
+  toolName?: string
+  inputRefs: string[]
+  contextRefs: string[]
+  status: SkillStepStatus
+  reasoningSummary?: string
+  stepOutput: string
+  evidenceRefs: string[]
+  validationNotes: string[]
+  nextConstraints?: string[]
+  startedAt: string
+  endedAt: string
+  durationMs: number
+  degradationReason?: AgentRunDegradationReasonResult | null
 }
 
 export interface ProjectAgentRunResult {
@@ -215,6 +303,17 @@ export interface ProjectAgentRunResult {
   runMode: string
   selectedSkillIds: string[]
   groundingSources: string[]
+  status?: "needs_input" | "running" | "completed" | "validation_failed" | "degraded" | "error"
+  executedSkills?: Array<Record<string, unknown>>
+  contextRefs?: string[]
+  structuredOutput?: Record<string, unknown>
+  validationErrors?: Array<Record<string, unknown>>
+  executionTimeline?: ExecutionTimelineEntryResult[]
+  degradationReason?: AgentRunDegradationReasonResult | null
+  stepExecutions?: SkillStepExecutionResult[]
+  executionPlan?: SkillExecutionPlanResult | Record<string, unknown>
+  executionMode?: string
+  reviewItemId?: string | null
   resultSummary: string
   trace: string[]
   outputArtifacts: string[]
@@ -260,6 +359,8 @@ export async function runProjectAgent(
     runMode: "diagnose_document" | "generate_strategy" | "generate_asset_brief" | "validate_action_plan"
     selectedSkillIds: string[]
     groundingSources: string[]
+    taskInput?: Record<string, unknown>
+    createReviewItem?: boolean
   },
 ): Promise<ProjectAgentRunResult> {
   return invoke<ProjectAgentRunResult>("run_project_agent", {

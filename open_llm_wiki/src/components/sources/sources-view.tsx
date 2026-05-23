@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react"
 import { open } from "@tauri-apps/plugin-dialog"
 import { invoke } from "@tauri-apps/api/core"
-import { Plus, FileText, RefreshCw, BookOpen, Trash2, Folder, ChevronRight, ChevronDown, FileCog } from "lucide-react"
+import { Plus, FileText, RefreshCw, BookOpen, Trash2, Folder, ChevronRight, ChevronDown, FileCog, RotateCcw, CheckCircle2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { useWikiStore } from "@/stores/wiki-store"
@@ -16,6 +16,17 @@ import { decidePageFate } from "@/lib/source-delete-decision"
 import { removeFromIngestCache } from "@/lib/ingest-cache"
 import { reingestSource, reparseStructuredSource } from "@/lib/source-actions"
 import {
+  buildRecompileBatchOptions,
+  collectRecompilableSourceFiles,
+  describeRecompileMode,
+  type SourcesRecompileMode,
+} from "@/lib/sources-recompile"
+import {
+  formatProjectQualityTaskSummary,
+  loadProjectQualityReport,
+  type ProjectQualityReport,
+} from "@/lib/project-quality-report"
+import {
   collectAllFilesIncludingDot,
   decideDeleteClick,
 } from "@/lib/sources-tree-delete"
@@ -25,6 +36,9 @@ function getStructuredSourceLabel(filePath: string): string | null {
   if (ext === "pdf") return "PDF"
   if (ext === "docx") return "DOCX"
   if (ext === "doc") return "DOC"
+  if (ext === "xlsx") return "XLSX"
+  if (ext === "xls") return "XLS"
+  if (ext === "ods") return "ODS"
   if (ext === "xmind") return "XMIND"
   return null
 }
@@ -40,7 +54,11 @@ export function SourcesView() {
   const dataVersion = useWikiStore((s) => s.dataVersion)
   const [sources, setSources] = useState<FileNode[]>([])
   const [importing, setImporting] = useState(false)
+  const [recompilingAll, setRecompilingAll] = useState(false)
+  const [recompileMode, setRecompileMode] = useState<SourcesRecompileMode>("core")
   const [ingestingPath, setIngestingPath] = useState<string | null>(null)
+  const [qualityReport, setQualityReport] = useState<ProjectQualityReport | null>(null)
+  const [qualityReportLoading, setQualityReportLoading] = useState(false)
   /**
    * Path of the source-tree node currently in "click again to
    * confirm delete" state. Lifted up here (rather than living
@@ -77,9 +95,29 @@ export function SourcesView() {
     }
   }, [project, dataVersion])
 
+  const loadQualityReport = useCallback(async () => {
+    if (!project) {
+      setQualityReport(null)
+      return
+    }
+    setQualityReportLoading(true)
+    try {
+      const report = await loadProjectQualityReport(project.path)
+      setQualityReport(report)
+    } catch {
+      setQualityReport(null)
+    } finally {
+      setQualityReportLoading(false)
+    }
+  }, [project, dataVersion])
+
   useEffect(() => {
     loadSources()
   }, [loadSources])
+
+  useEffect(() => {
+    void loadQualityReport()
+  }, [loadQualityReport])
 
   async function handleImport() {
     if (!project) return
@@ -221,6 +259,45 @@ export function SourcesView() {
     }
   }
 
+  async function handleRecompileAll() {
+    if (!project || recompilingAll) return
+    if (!hasUsableLlm(llmConfig)) {
+      window.alert("请先在设置中配置可用 LLM，再重新编译全部资料。")
+      return
+    }
+    const files = collectRecompilableSourceFiles(sources)
+    if (files.length === 0) {
+      window.alert("当前没有可重新编译的已导入资料。")
+      return
+    }
+
+    setRecompilingAll(true)
+    try {
+      const pp = normalizePath(project.path)
+      for (const file of files) {
+        await removeFromIngestCache(pp, file.name)
+      }
+      await enqueueBatch(
+        project.id,
+        files.map((file) => ({
+          sourcePath: file.path,
+          folderContext: folderContextForSource(pp, file.path),
+        })),
+        buildRecompileBatchOptions(recompileMode),
+      )
+      useWikiStore.getState().bumpDataVersion()
+      void loadQualityReport()
+    } catch (err) {
+      console.error("Failed to recompile all sources:", err)
+      window.alert(`重新编译入队失败：${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setRecompilingAll(false)
+    }
+  }
+
+  const recompileFiles = collectRecompilableSourceFiles(sources)
+  const selectedRecompileMode = describeRecompileMode(recompileMode)
+
   async function handleOpenSource(node: FileNode) {
     setSelectedFile(node.path)
     try {
@@ -243,6 +320,7 @@ export function SourcesView() {
       // Step 8: Refresh everything (UI side — must run with parent
       // context, hence kept here rather than inside the helper).
       await loadSources()
+      void loadQualityReport()
       const tree = await listDirectory(pp)
       setFileTree(tree)
       useWikiStore.getState().bumpDataVersion()
@@ -295,6 +373,7 @@ export function SourcesView() {
         console.warn(`Failed to remove folder ${folder.path}:`, err)
       }
       await loadSources()
+      void loadQualityReport()
       const tree = await listDirectory(pp)
       setFileTree(tree)
       useWikiStore.getState().bumpDataVersion()
@@ -449,7 +528,7 @@ export function SourcesView() {
 
   async function handleReparseStructured(node: FileNode) {
     if (!project || ingestingPath) return
-    if (!/\.(pdf|docx|doc|xmind)$/i.test(node.path)) return
+    if (!/\.(pdf|docx|doc|xmind|xlsx|xls|ods)$/i.test(node.path)) return
     setIngestingPath(node.path)
     try {
       await reparseStructuredSource(project.path, project.id, node.path)
@@ -463,9 +542,18 @@ export function SourcesView() {
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b px-4 py-3">
-        <h2 className="text-sm font-semibold">{t("sources.title")}</h2>
-        <div className="flex gap-1">
-          <Button variant="ghost" size="icon" onClick={loadSources} title="Refresh">
+        <div className="flex flex-col gap-1">
+          <h2 className="text-sm font-semibold">{t("sources.title")}</h2>
+          <p className="text-[11px] text-muted-foreground">
+            {qualityReportLoading
+              ? "正在读取任务卡质量罗盘..."
+              : qualityReport
+                ? formatProjectQualityTaskSummary(qualityReport)
+                : "暂无任务卡质量报告，重新编译后会自动生成。"}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-1">
+          <Button variant="ghost" size="icon" onClick={() => { void loadSources(); void loadQualityReport() }} title="Refresh">
             <RefreshCw className="h-4 w-4" />
           </Button>
           <Button size="sm" onClick={handleImport} disabled={importing}>
@@ -478,6 +566,81 @@ export function SourcesView() {
           </Button>
         </div>
       </div>
+
+      {sources.length > 0 && (
+        <div className="border-b bg-gradient-to-r from-background via-muted/20 to-background px-4 py-3">
+          <div className="rounded-xl border bg-card/80 p-3 shadow-sm">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+                    重新编译全部已导入文件
+                  </span>
+                  <span className="text-[11px] text-muted-foreground">
+                    {recompileFiles.length} 个可编译文件 · balanced 批处理 · 不删除旧 wiki / 不重复复制 raw
+                  </span>
+                </div>
+                <div className="mt-2 grid gap-2 md:grid-cols-2">
+                  {(["core", "full"] as SourcesRecompileMode[]).map((mode) => {
+                    const item = describeRecompileMode(mode)
+                    const active = recompileMode === mode
+                    return (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() => setRecompileMode(mode)}
+                        className={`rounded-lg border p-3 text-left transition ${
+                          active
+                            ? "border-primary bg-primary/5 shadow-sm"
+                            : "border-border bg-background/70 hover:border-primary/40 hover:bg-accent/40"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div>
+                            <div className="text-sm font-semibold">{item.label}</div>
+                            <div className="text-[11px] text-muted-foreground">{item.shortLabel}</div>
+                          </div>
+                          {active && <CheckCircle2 className="h-4 w-4 text-primary" />}
+                        </div>
+                        <p className="mt-2 text-[11px] leading-5 text-muted-foreground">{item.description}</p>
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                            预计 {item.estimate}
+                          </span>
+                          <span className={`rounded px-1.5 py-0.5 text-[10px] ${
+                            item.runsStrategyCompile
+                              ? "bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                              : "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                          }`}>
+                            strategyCompile: {item.runsStrategyCompile ? "deferred" : "skipped"}
+                          </span>
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+                <div className="mt-2 text-[11px] text-muted-foreground">
+                  会执行：{selectedRecompileMode.stages.join(" / ")}
+                  {selectedRecompileMode.skippedStages.length > 0
+                    ? `；会跳过：${selectedRecompileMode.skippedStages.join(" / ")}`
+                    : ""}
+                </div>
+              </div>
+              <Button
+                variant="default"
+                size="sm"
+                onClick={() => void handleRecompileAll()}
+                disabled={importing || recompilingAll || recompileFiles.length === 0 || !hasUsableLlm(llmConfig)}
+                title={hasUsableLlm(llmConfig) ? "清理缓存并重新编译全部已导入资料" : "请先配置 LLM"}
+                className="shrink-0"
+              >
+                <RotateCcw className={`mr-1 h-4 w-4 ${recompilingAll ? "animate-spin" : ""}`} />
+                {recompilingAll ? "入队中..." : `开始${selectedRecompileMode.label}`}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <ScrollArea className="flex-1">
         {sources.length === 0 ? (
@@ -585,6 +748,14 @@ function countFiles(nodes: FileNode[]): number {
     }
   }
   return count
+}
+
+function folderContextForSource(projectPath: string, sourcePath: string): string {
+  const rawRoot = `${normalizePath(projectPath)}/raw/sources/`
+  const relPath = normalizePath(sourcePath).replace(rawRoot, "")
+  const parts = relPath.split("/")
+  parts.pop()
+  return parts.join(" > ")
 }
 
 

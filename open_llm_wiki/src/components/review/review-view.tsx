@@ -190,6 +190,9 @@ export function ReviewView() {
       }
       void runDeepResearchSession(sessionId, pp)
       resolveItem(id, action)
+    } else if (action === "goto-strategy-mode") {
+      useWikiStore.getState().setActiveView("strategy")
+      resolveItem(id, action)
     } else if (actionLooksLikeResearch(action) && project) {
       // Actions with "research" trigger deep research, not just page creation
       if (!canRunResearch()) {
